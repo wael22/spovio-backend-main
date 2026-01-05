@@ -12,6 +12,7 @@ flask-migrate>=4.0.0
 
 # Authentification et Sécurité
 PyJWT>=2.8.0
+flask-jwt-extended>=4.6.0
 pyotp>=2.9.0  # Pour 2FA TOTP
 qrcode>=7.4.2  # Pour générer QR codes 2FA
 cryptography>=41.0.0  # Pour chiffrer les secrets 2FA
