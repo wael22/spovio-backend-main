@@ -99,20 +99,13 @@ def create_app(config_name=None):
     jwt = JWTManager(app)
     
     
-    # Configuration CORS
+    # Configuration CORS - Configuration simple et directe
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
     
-    # Configuration CORS complète pour gérer les preflight requests
-    cors_config = {
-        "origins": app.config['CORS_ORIGINS'],
-        "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-        "expose_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True,
-        "max_age": 3600
-    }
-    
-    CORS(app, resources={r"/api/*": cors_config})
+    # Utiliser la configuration la plus simple possible
+    CORS(app, 
+         resources={r"/*": {"origins": app.config['CORS_ORIGINS']}},
+         supports_credentials=True)
     
     # Enregistrement des blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
