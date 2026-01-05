@@ -123,21 +123,25 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     SQLALCHEMY_DATABASE_URI = Config.get_database_uri()
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,
-        'pool_recycle': 3600,
-        'pool_size': 20,
-        'max_overflow': 30,
-        'connect_args': {
-            "options": "-c timezone=UTC"
-        }
-    }
+    # SQLALCHEMY_ENGINE_OPTIONS désactivé car incompatible avec SQLite
+    # Décommenter et utiliser PostgreSQL pour activer ces options
+    # SQLALCHEMY_ENGINE_OPTIONS = {
+    #     'pool_pre_ping': True,
+    #     'pool_recycle': 3600,
+    #     'pool_size': 20,
+    #     'max_overflow': 30,
+    #     'connect_args': {
+    #         "options": "-c timezone=UTC"
+    #     }
+    # }
     
     # Configuration sécurisée pour la production
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Strict'
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', '').split(',')
+    # CORS_ORIGINS avec fallback pour éviter split sur string vide
+    cors_env = os.environ.get('CORS_ORIGINS', '')
+    CORS_ORIGINS = [origin.strip() for origin in cors_env.split(',') if origin.strip()] if cors_env else []
 
 class TestingConfig(Config):
     """Configuration de test."""
