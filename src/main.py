@@ -101,11 +101,18 @@ def create_app(config_name=None):
     
     # Configuration CORS
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
-    CORS(app, 
-         origins=app.config['CORS_ORIGINS'], 
-         supports_credentials=True,
-         allow_headers=["Content-Type", "Authorization"],
-         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+    
+    # Configuration CORS complète pour gérer les preflight requests
+    cors_config = {
+        "origins": app.config['CORS_ORIGINS'],
+        "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+        "max_age": 3600
+    }
+    
+    CORS(app, resources={r"/api/*": cors_config})
     
     # Enregistrement des blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
