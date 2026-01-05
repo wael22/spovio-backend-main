@@ -37,6 +37,12 @@ google-auth-httplib2>=0.1.1
 # Rate Limiting
 redis>=5.0.0
 
+# Paiement
+stripe>=8.0.0
+
+# Email (optionnel mais utilisé si configuré)
+flask-mail>=0.9.1
+
 # WebSocket (optionnel)
 # flask-socketio>=5.3.0
 # python-socketio>=5.9.0
