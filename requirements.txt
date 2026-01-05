@@ -27,6 +27,7 @@ opencv-python-headless>=4.8.0
 # Configuration
 PyYAML>=6.0.0
 python-dotenv>=1.0.0
+psutil>=5.9.0  # Pour diagnostics système
 
 # Google OAuth
 google-auth>=2.23.0
