@@ -46,20 +46,31 @@ class Config:
     @staticmethod
     def get_database_uri():
         """Retourne l'URI de la base de données selon l'environnement."""
+        # Priorité 1: DATABASE_URL explicite (Render PostgreSQL)
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            return database_url
+        
         env = os.environ.get('FLASK_ENV', 'development')
         
         if env == 'production':
-            # PRODUCTION: PostgreSQL obligatoire
-            db_user = os.environ.get('DB_USER', 'padelvar')
-            db_password = quote_plus(os.environ.get('DB_PASSWORD', ''))
-            db_host = os.environ.get('DB_HOST', 'localhost')
-            db_port = os.environ.get('DB_PORT', '5432')
-            db_name = os.environ.get('DB_NAME', 'padelvar_prod')
+            # PRODUCTION: PostgreSQL si configuré, sinon SQLite
+            db_password = os.environ.get('DB_PASSWORD', '')
             
-            if not db_password:
-                raise ValueError("DB_PASSWORD must be set in production")
-                
-            return f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
+            if db_password:
+                # PostgreSQL configuré
+                db_user = os.environ.get('DB_USER', 'padelvar')
+                db_password_encoded = quote_plus(db_password)
+                db_host = os.environ.get('DB_HOST', 'localhost')
+                db_port = os.environ.get('DB_PORT', '5432')
+                db_name = os.environ.get('DB_NAME', 'padelvar_prod')
+                return f'postgresql://{db_user}:{db_password_encoded}@{db_host}:{db_port}/{db_name}'
+            else:
+                # Fallback sur SQLite en production (données non persistantes sur Render!)
+                print("⚠️  WARNING: Using SQLite in production. Data will be ephemeral on Render!")
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                db_path = os.path.join(base_dir, 'padelvar.db')
+                return f'sqlite:///{db_path}'
         
         elif env == 'testing':
             # TESTS: SQLite en mémoire (rapide)
@@ -67,10 +78,6 @@ class Config:
         
         else:
             # DEV: SQLite local avec chemin absolu pour garantir la persistance
-            # __file__ = src/config/__init__.py
-            # os.path.dirname(__file__) = src/config
-            # os.path.dirname(os.path.dirname(__file__)) = src
-            # os.path.dirname(os.path.dirname(os.path.dirname(__file__))) = racine du projet
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             db_path = os.path.join(base_dir, 'instance', 'padelvar.db')
             return f'sqlite:///{db_path}'
@@ -80,10 +87,15 @@ class Config:
         """Valide que les variables critiques sont définies."""
         env = os.environ.get('FLASK_ENV', 'development')
         if env == 'production':
-            required_vars = ['SECRET_KEY', 'DB_PASSWORD', 'STRIPE_SECRET_KEY', 'BUNNY_API_KEY']
+            # Variables optionnelles mais recommandées
+            required_vars = ['SECRET_KEY']
             missing_vars = [var for var in required_vars if not os.environ.get(var)]
             if missing_vars:
                 raise ValueError(f"Variables d'environnement manquantes pour la production: {', '.join(missing_vars)}")
+            
+            # Avertissements pour variables optionnelles
+            if not os.environ.get('DB_PASSWORD'):
+                print("⚠️  WARNING: DB_PASSWORD not set, using SQLite (data will be ephemeral on Render)")
     
     @staticmethod
     def init_app(app):
