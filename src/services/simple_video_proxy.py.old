@@ -1,0 +1,270 @@
+# simple_video_proxy.py
+# Proxy MJPEG simple sans OpenCV (évite les conflits NumPy)
+# Utilise seulement requests et threading
+
+import argparse
+import logging
+import signal
+import sys
+import time
+import threading
+from dataclasses import dataclass
+import requests
+from datetime import datetime
+
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import uvicorn
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SimpleProxyConfig:
+    source: str
+    buffer_size: int = 30  # secondes de buffer
+    reconnect_interval: float = 5.0  # seconds
+
+
+class SimpleVideoProxy:
+    def __init__(self, config: SimpleProxyConfig):
+        self.cfg = config
+        self._running = threading.Event()
+        self._running.set()
+        self._current_frame = b""
+        self._last_update = datetime.now()
+        self._lock = threading.Lock()
+        self._stream_thread = threading.Thread(
+            target=self._stream_loop, daemon=True
+        )
+        
+    def start(self):
+        logger.info("Démarrage du proxy MJPEG simple...")
+        self._stream_thread.start()
+        
+    def stop(self):
+        logger.info("Arrêt du proxy MJPEG...")
+        self._running.clear()
+        
+    def change_source(self, new_source: str):
+        logger.info(f"Changement de source: {new_source}")
+        with self._lock:
+            self.cfg.source = new_source
+    
+    def _stream_loop(self):
+        """Boucle principale pour récupérer le flux MJPEG simplifié"""
+        while self._running.is_set():
+            try:
+                logger.info(f"Connexion à la source: {self.cfg.source}")
+                
+                # Ouvrir le flux MJPEG avec requests - Version plus robuste
+                response = requests.get(
+                    self.cfg.source,
+                    stream=True,
+                    timeout=10,
+                    headers={'User-Agent': 'PadelVar-Proxy/1.0'}
+                )
+                
+                if response.status_code != 200:
+                    raise Exception(f"HTTP {response.status_code}")
+                    
+                logger.info("Flux MJPEG connecté, lecture en cours...")
+                
+                # Lire le flux MJPEG et extraire les frames JPEG
+                buffer = b""
+                frame_start = b'\xff\xd8'  # Début JPEG
+                frame_end = b'\xff\xd9'    # Fin JPEG
+                frame_count = 0
+                
+                # Détecter la boundary dans les en-têtes
+                boundary = None
+                content_type = response.headers.get('content-type', '')
+                if 'boundary=' in content_type:
+                    boundary_name = content_type.split('boundary=')[1].strip()
+                    boundary = f'--{boundary_name}'.encode()
+                    logger.info(f"Boundary détectée: {boundary}")
+                else:
+                    boundary = b'--myboundary'  # Fallback pour caméras Axis
+                    logger.info("Utilisation boundary par défaut: --myboundary")
+                
+                for chunk in response.iter_content(chunk_size=8192):
+                    if not self._running.is_set():
+                        logger.info("Arrêt demandé, sortie de la boucle")
+                        break
+                        
+                    if not chunk:  # Fin de flux
+                        logger.warning("Fin de flux détectée")
+                        break
+                        
+                    buffer += chunk
+                    
+                    # Chercher les frames JPEG complètes dans le buffer
+                    while frame_start in buffer:
+                        # Trouver le début de la frame
+                        start_pos = buffer.find(frame_start)
+                        if start_pos == -1:
+                            break
+                            
+                        # Chercher la fin de la frame
+                        end_pos = buffer.find(frame_end, start_pos + 2)
+                        if end_pos == -1:
+                            # Frame incomplète, attendre plus de données
+                            break
+                            
+                        # Extraire la frame JPEG complète
+                        jpeg_frame = buffer[start_pos:end_pos + 2]
+                        
+                        # Mettre à jour le frame actuel
+                        # Vérification taille minimum
+                        if len(jpeg_frame) > 100:
+                            with self._lock:
+                                self._current_frame = jpeg_frame
+                                self._last_update = datetime.now()
+                                
+                        # Supprimer la frame traitée du buffer
+                        buffer = buffer[end_pos + 2:]
+                        
+                    # Limiter la taille du buffer
+                    if len(buffer) > 1024 * 1024:  # 1MB max
+                        # Garder les 512KB récents
+                        buffer = buffer[-512 * 1024:]
+                        
+                response.close()
+                
+            except Exception as e:
+                logger.error(f"Erreur flux MJPEG: {e}")
+                reconnect_delay = self.cfg.reconnect_interval
+                logger.info(f"Reconnexion dans {reconnect_delay}s...")
+                time.sleep(self.cfg.reconnect_interval)
+                
+    def _extract_frames(self, buffer: bytes, boundary: bytes):
+        """Méthode obsolète - remplacée par _stream_loop améliorée"""
+        pass
+            
+    def get_current_frame(self) -> bytes:
+        """Obtenir le frame JPEG actuel"""
+        with self._lock:
+            time_diff = (datetime.now() - self._last_update).seconds
+            if self._current_frame and time_diff < 30:
+                return self._current_frame
+                
+        # Retourner une image noire par défaut
+        return self._get_black_jpeg()
+        
+    def _get_black_jpeg(self) -> bytes:
+        """JPEG noir minimal pour les tests"""
+        # JPEG 1x1 pixel noir (base64 décodé)
+        hex_data = (
+            'ffd8ffe000104a46494600010101006000600000ffdb0043000302020302020303'
+            '02020303030404030303040503040404050607050506050707070807070708'
+            '0b08080a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a'
+            'ffdb0043010303040504040805050508080a0a080a080a0a0a0a0a0a0a0a0a0a'
+            '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a'
+            'ffc00011080001000103012200021101031101ffc4001f000001050101010101'
+            '0100000000000000000102030405060708090a0bffc400b510000201030302'
+            '0403050504040000017d01020300041105122131410613516107227114328191'
+            'a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363'
+            '738393a434445464748494a535455565758595a636465666768696a7374757'
+            '677787a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3'
+            'b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6'
+            'e7e8e9eaf1f2f3f4f5f6f7f8f9faffc4001f0100030101010101010100000000'
+            '0000000102030405060708090a0bffc400b5110002010204040304070504040'
+            '001277d010203110405213106124151076171138108a1091a1b1c109234252f0'
+            '15624272d10a162434e125f1171819261a28292a35363738393a434445464748'
+            '494a535455565758595a636465666768696a737475767778797a82838485868'
+            '788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2'
+            'c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6'
+            'f7f8f9faffda000c03010002110311003f00ffd9'
+        )
+        return bytes.fromhex(hex_data)
+        
+    def mjpeg_generator(self):
+        """Générateur de flux MJPEG"""
+        boundary = "frame"
+        
+        # Envoyer d'abord l'en-tête de boundary initial
+        yield b"--" + boundary.encode() + b"\r\n"
+        
+        frame_count = 0
+        while True:
+            frame = self.get_current_frame()
+            frame_count += 1
+            
+            # Log périodique pour debug
+            if frame_count % 100 == 1:
+                frame_size = len(frame)
+                logger.info(f"Génération frame {frame_count}, taille: {frame_size}")
+            
+            yield (
+                b"Content-Type: image/jpeg\r\n"
+                + f"Content-Length: {len(frame)}\r\n\r\n".encode()
+                + frame + b"\r\n"
+                + b"--" + boundary.encode() + b"\r\n"
+            )
+            
+            time.sleep(0.04)  # ~25 FPS
+
+
+def build_app(proxy: SimpleVideoProxy) -> FastAPI:
+    app = FastAPI(title="Simple Video Proxy Server", version="1.0.0")
+
+    @app.get("/stream.mjpg")
+    def stream_mjpg():
+        boundary = "frame"
+        return StreamingResponse(
+            proxy.mjpeg_generator(),
+            media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+        )
+
+    @app.post("/change_source")
+    def change_source(new_source: str):
+        logger.info(f"Requête de changement de source reçue: {new_source}")
+        proxy.change_source(new_source)
+        return {"status": "ok", "new_source": new_source}
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok", "proxy": "simple"}
+
+    return app
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Proxy vidéo MJPEG simple (sans OpenCV)"
+    )
+    p.add_argument("--source", required=True, help="URL caméra MJPEG")
+    p.add_argument("--port", type=int, default=8080, help="Port HTTP local")
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    cfg = SimpleProxyConfig(source=args.source)
+    proxy = SimpleVideoProxy(cfg)
+    proxy.start()
+
+    app = build_app(proxy)
+
+    def shutdown(signum, frame):
+        logger.info("Signal reçu, arrêt...")
+        proxy.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
+    server_url = f"http://127.0.0.1:{args.port}/stream.mjpg"
+    logger.info(f"Simple proxy server started on {server_url}")
+    uvicorn.run(app, host="0.0.0.0", port=int(args.port), log_level="info")
+
+
+if __name__ == "__main__":
+    main()

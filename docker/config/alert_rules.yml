@@ -1,0 +1,185 @@
+# Règles d'alerte Prometheus pour PadelVar
+# Définit les seuils critiques pour le monitoring
+
+groups:
+  - name: padelvar.application
+    rules:
+      # Application Flask en panne
+      - alert: PadelVarAppDown
+        expr: up{job="padelvar-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Application PadelVar indisponible"
+          description: "L'application Flask PadelVar ne répond plus depuis {{ $value }} minutes."
+
+      # Erreurs HTTP élevées
+      - alert: HighErrorRate
+        expr: rate(flask_http_request_exceptions_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taux d'erreur HTTP élevé"
+          description: "Le taux d'erreur HTTP est de {{ $value }} erreurs/sec sur les 5 dernières minutes."
+
+      # Temps de réponse lent
+      - alert: HighResponseTime
+        expr: flask_http_request_duration_seconds_sum / flask_http_request_duration_seconds_count > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Temps de réponse lent"
+          description: "Le temps de réponse moyen est de {{ $value }} secondes."
+
+      # Sessions zombies détectées
+      - alert: ZombieSessions
+        expr: padelvar_zombie_sessions_total > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sessions zombies détectées"
+          description: "{{ $value }} sessions d'enregistrement zombies détectées."
+
+  - name: padelvar.celery
+    rules:
+      # Workers Celery en panne
+      - alert: CeleryWorkerDown
+        expr: up{job="celery-workers"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker Celery en panne"
+          description: "Un ou plusieurs workers Celery ne répondent plus."
+
+      # Queue Celery surchargée
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_length > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue Celery surchargée"
+          description: "La queue {{ $labels.queue }} contient {{ $value }} tâches en attente."
+
+      # Échecs de tâches élevés
+      - alert: HighCeleryTaskFailures
+        expr: rate(celery_task_failed_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taux d'échec Celery élevé"
+          description: "{{ $value }} tâches Celery échouent par seconde."
+
+  - name: padelvar.database
+    rules:
+      # PostgreSQL en panne
+      - alert: PostgreSQLDown
+        expr: up{job="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Base de données PostgreSQL indisponible"
+          description: "La base de données PostgreSQL ne répond plus."
+
+      # Trop de connexions
+      - alert: PostgreSQLTooManyConnections
+        expr: pg_stat_database_numbackends / pg_settings_max_connections * 100 > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trop de connexions PostgreSQL"
+          description: "{{ $value }}% des connexions PostgreSQL sont utilisées."
+
+      # Espace disque faible
+      - alert: PostgreSQLLowDiskSpace
+        expr: (1 - (pg_database_size_bytes / node_filesystem_size_bytes)) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Espace disque PostgreSQL faible"
+          description: "Il reste moins de 10% d'espace disque pour PostgreSQL."
+
+  - name: padelvar.redis
+    rules:
+      # Redis en panne
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis indisponible"
+          description: "Le serveur Redis ne répond plus."
+
+      # Mémoire Redis élevée
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Utilisation mémoire Redis élevée"
+          description: "Redis utilise {{ $value }}% de sa mémoire allouée."
+
+  - name: padelvar.system
+    rules:
+      # CPU élevé
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Utilisation CPU élevée"
+          description: "L'utilisation CPU est de {{ $value }}% sur {{ $labels.instance }}."
+
+      # Mémoire faible
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Utilisation mémoire élevée"
+          description: "{{ $value }}% de la mémoire est utilisée sur {{ $labels.instance }}."
+
+      # Espace disque faible
+      - alert: LowDiskSpace
+        expr: (1 - (node_filesystem_free_bytes / node_filesystem_size_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Espace disque faible"
+          description: "{{ $value }}% de l'espace disque est utilisé sur {{ $labels.device }}."
+
+  - name: padelvar.business
+    rules:
+      # Crédits utilisateur faibles (métrique custom)
+      - alert: UserLowCredits
+        expr: padelvar_user_credits_total < 10
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Utilisateur avec peu de crédits"
+          description: "L'utilisateur {{ $labels.user_id }} a moins de 10 crédits restants."
+
+      # Échecs d'upload vidéo
+      - alert: VideoUploadFailures
+        expr: rate(padelvar_video_upload_failures_total[10m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Échecs d'upload vidéo fréquents"
+          description: "{{ $value }} uploads vidéo échouent par seconde."

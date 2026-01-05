@@ -1,0 +1,16 @@
+# Configuration de provisioning des dashboards Grafana
+# Auto-provisioning des dashboards au démarrage
+
+apiVersion: 1
+
+providers:
+  - name: 'PadelVar Dashboards'
+    orgId: 1
+    folder: 'PadelVar'
+    folderUid: 'padelvar'
+    type: file
+    disableDeletion: false
+    editable: true
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

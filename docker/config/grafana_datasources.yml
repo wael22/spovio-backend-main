@@ -1,0 +1,33 @@
+# Configuration des sources de données Grafana
+# Auto-provisioning des datasources au démarrage
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    version: 1
+    editable: true
+    basicAuth: false
+    jsonData:
+      httpMethod: POST
+      queryTimeout: 60s
+      timeInterval: 15s
+    secureJsonData: {}
+
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgresql:5432
+    database: padelvar_prod
+    user: padelvar_user
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: prefer
+      maxOpenConns: 10
+      maxIdleConns: 2
+      connMaxLifetime: 14400

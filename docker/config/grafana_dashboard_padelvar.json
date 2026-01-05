@@ -1,0 +1,306 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "PadelVar - Application Dashboard",
+    "tags": ["padelvar", "application"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Statut des Services",
+        "type": "stat",
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 0,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "up{job=\"padelvar-app\"}",
+            "legendFormat": "Application"
+          },
+          {
+            "expr": "up{job=\"postgresql\"}",
+            "legendFormat": "PostgreSQL"
+          },
+          {
+            "expr": "up{job=\"redis\"}",
+            "legendFormat": "Redis"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "0": {
+                    "text": "DOWN",
+                    "color": "red"
+                  },
+                  "1": {
+                    "text": "UP",
+                    "color": "green"
+                  }
+                },
+                "type": "value"
+              }
+            ],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0
+                },
+                {
+                  "color": "green",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Requêtes HTTP par Minute",
+        "type": "graph",
+        "gridPos": {
+          "h": 6,
+          "w": 12,
+          "x": 6,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "rate(flask_http_request_total[1m]) * 60",
+            "legendFormat": "Requêtes/min"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Requêtes/min",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Temps de Réponse Moyen",
+        "type": "graph",
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 18,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "flask_http_request_duration_seconds_sum / flask_http_request_duration_seconds_count",
+            "legendFormat": "Temps moyen (s)"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Secondes",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Erreurs HTTP",
+        "type": "graph",
+        "gridPos": {
+          "h": 6,
+          "w": 12,
+          "x": 0,
+          "y": 6
+        },
+        "targets": [
+          {
+            "expr": "rate(flask_http_request_exceptions_total[5m])",
+            "legendFormat": "Erreurs/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Erreurs/sec",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Sessions d'Enregistrement",
+        "type": "stat",
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 12,
+          "y": 6
+        },
+        "targets": [
+          {
+            "expr": "padelvar_active_recordings_total",
+            "legendFormat": "Actives"
+          },
+          {
+            "expr": "padelvar_zombie_sessions_total",
+            "legendFormat": "Zombies"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 5
+                },
+                {
+                  "color": "red",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Utilisation CPU",
+        "type": "graph",
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 18,
+          "y": 6
+        },
+        "targets": [
+          {
+            "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "CPU %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Pourcentage",
+            "min": 0,
+            "max": 100
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Utilisation Mémoire",
+        "type": "graph",
+        "gridPos": {
+          "h": 6,
+          "w": 8,
+          "x": 0,
+          "y": 12
+        },
+        "targets": [
+          {
+            "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+            "legendFormat": "Mémoire %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Pourcentage",
+            "min": 0,
+            "max": 100
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Workers Celery",
+        "type": "stat",
+        "gridPos": {
+          "h": 6,
+          "w": 8,
+          "x": 8,
+          "y": 12
+        },
+        "targets": [
+          {
+            "expr": "celery_workers_total",
+            "legendFormat": "Workers Actifs"
+          },
+          {
+            "expr": "celery_queue_length",
+            "legendFormat": "Queue Length"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 10
+                },
+                {
+                  "color": "red",
+                  "value": 50
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Base de Données PostgreSQL",
+        "type": "graph",
+        "gridPos": {
+          "h": 6,
+          "w": 8,
+          "x": 16,
+          "y": 12
+        },
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends",
+            "legendFormat": "Connexions Actives"
+          },
+          {
+            "expr": "rate(pg_stat_database_xact_commit[5m])",
+            "legendFormat": "Transactions/sec"
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    },
+    "schemaVersion": 30,
+    "version": 1,
+    "links": []
+  }
+}

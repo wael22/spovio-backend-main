@@ -1,0 +1,28 @@
+# Configuration des proxies/relays vidéo Padelvar
+# Chaque terrain a sa propre caméra et buffer
+
+proxies:
+  # Terrain 1 - Caméra de test
+  - terrain_id: 1
+    name: "Terrain 1"
+    source_url: "http://212.67.236.61/mjpg/video.mjpg"
+    buffer_frames: 120  # 120 frames ~ 5 secondes à 25fps
+    
+  # Terrain 2 - Exemple (désactivé)
+  # - terrain_id: 2
+  #   name: "Terrain 2"
+  #   source_url: "http://camera2.example.com/mjpg/video.mjpg"
+  #   buffer_frames: 120
+  
+  # Terrain 3 - Exemple (désactivé)
+  # - terrain_id: 3
+  #   name: "Terrain 3"
+  #   source_url: "http://camera3.example.com/mjpg/video.mjpg"
+  #   buffer_frames: 120
+
+# Configuration des enregistrements
+recordings:
+  root: "C:/Users/PC/Videos/PadelVar"
+  ffmpeg_path: "C:/ffmpeg/bin/ffmpeg.exe"
+  default_crf: 23
+  default_preset: "veryfast"

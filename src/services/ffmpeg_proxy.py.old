@@ -1,0 +1,151 @@
+# ffmpeg_proxy.py
+# Proxy MJPEG basé sur FFmpeg (plus robuste que l'implémentation manuelle)
+
+import argparse
+import logging
+import signal
+import sys
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+from fastapi import FastAPI, Response
+from fastapi.responses import StreamingResponse
+import uvicorn
+
+logger = logging.getLogger(__name__)
+
+
+class FFmpegProxy:
+    def __init__(self, source_url: str, port: int):
+        self.source_url = source_url
+        self.port = port
+        self.process = None
+        self.running = threading.Event()
+        
+    def start(self):
+        """Démarrer le proxy FFmpeg"""
+        logger.info(f"Démarrage proxy FFmpeg: {self.source_url} -> :{self.port}")
+        
+        # Commande FFmpeg pour proxy MJPEG
+        cmd = [
+            'ffmpeg',
+            '-y',  # Overwrite output
+            '-i', self.source_url,  # Source MJPEG
+            '-c:v', 'copy',  # Copy video codec (pas de ré-encodage)
+            '-f', 'mjpeg',  # Format de sortie MJPEG
+            '-listen', '1',  # Mode écoute HTTP
+            f'http://0.0.0.0:{self.port}/stream.mjpg'
+        ]
+        
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0
+            )
+            logger.info(f"FFmpeg proxy démarré (PID: {self.process.pid})")
+            self.running.set()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erreur démarrage FFmpeg: {e}")
+            return False
+    
+    def stop(self):
+        """Arrêter le proxy FFmpeg"""
+        self.running.clear()
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=5)
+                logger.info("FFmpeg proxy arrêté")
+            except Exception as e:
+                logger.error(f"Erreur arrêt FFmpeg: {e}")
+                if self.process:
+                    self.process.kill()
+    
+    def is_running(self) -> bool:
+        """Vérifier si le proxy fonctionne"""
+        return (self.running.is_set() and 
+                self.process and 
+                self.process.poll() is None)
+
+
+def build_app() -> FastAPI:
+    app = FastAPI(title="FFmpeg MJPEG Proxy", version="1.0.0")
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok", "proxy": "ffmpeg"}
+
+    @app.get("/")
+    def root():
+        return {"message": "FFmpeg MJPEG Proxy", "stream": "/stream.mjpg"}
+        
+    return app
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Proxy MJPEG basé sur FFmpeg")
+    parser.add_argument("--source", required=True, help="URL source MJPEG")
+    parser.add_argument("--port", type=int, default=8080, help="Port local")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    
+    # Vérifier que FFmpeg est disponible
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], 
+                              capture_output=True, timeout=5)
+        if result.returncode != 0:
+            raise Exception("FFmpeg non fonctionnel")
+        logger.info("FFmpeg disponible")
+    except Exception as e:
+        logger.error(f"FFmpeg non disponible: {e}")
+        sys.exit(1)
+    
+    # Créer le proxy FFmpeg
+    proxy = FFmpegProxy(args.source, args.port)
+    
+    # Créer l'app FastAPI pour les endpoints de contrôle
+    app = build_app()
+    
+    # Gestionnaire d'arrêt
+    def shutdown(signum, frame):
+        logger.info("Arrêt demandé...")
+        proxy.stop()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+    
+    # Démarrer le proxy FFmpeg
+    if not proxy.start():
+        logger.error("Impossible de démarrer le proxy FFmpeg")
+        sys.exit(1)
+    
+    logger.info(f"Proxy démarré sur http://127.0.0.1:{args.port}")
+    logger.info(f"Stream disponible sur: http://127.0.0.1:{args.port}/stream.mjpg")
+    
+    # Démarrer le serveur FastAPI pour les endpoints de contrôle
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=args.port + 1000, log_level="warning")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        proxy.stop()
+
+
+if __name__ == "__main__":
+    main()

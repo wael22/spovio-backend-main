@@ -1,0 +1,81 @@
+# Configuration Prometheus pour PadelVar
+# Collecte les métriques de l'application et de l'infrastructure
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    service: 'padelvar'
+    environment: 'production'
+
+# Règles d'alerte
+rule_files:
+  - "alert_rules.yml"
+
+# Configuration des alertes (Alertmanager)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093  # Décommentez si vous utilisez Alertmanager
+
+scrape_configs:
+  # Métriques de l'application Flask PadelVar
+  - job_name: 'padelvar-app'
+    static_configs:
+      - targets: ['padelvar-app:5000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    honor_labels: true
+
+  # Métriques des workers Celery
+  - job_name: 'celery-workers'
+    static_configs:
+      - targets: ['celery-worker-video:9540', 'celery-worker-maintenance:9540']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Métriques de PostgreSQL (avec postgres_exporter)
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+
+  # Métriques de Redis (avec redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # Métriques système de Nginx
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:9113']
+    scrape_interval: 30s
+
+  # Auto-monitoring de Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+
+  # Node Exporter pour métriques système
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # cAdvisor pour métriques des conteneurs Docker
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+
+# Configuration de stockage
+storage:
+  tsdb:
+    retention.time: 15d
+    retention.size: 10GB
+    path: /prometheus/data

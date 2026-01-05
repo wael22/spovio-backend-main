@@ -1,0 +1,32 @@
+# PadelVar Video System - Dépendances Python
+# ============================================
+
+# Core
+flask>=2.3.0
+requests>=2.31.0
+
+# Image processing
+Pillow>=10.0.0
+opencv-python-headless>=4.8.0
+
+# Database (existant)
+flask-sqlalchemy>=3.0.0
+flask-migrate>=4.0.0
+
+# Authentication (existant)
+flask-cors>=4.0.0
+PyJWT>=2.8.0
+
+# YAML pour configs (optionnel)
+PyYAML>=6.0.0
+
+# Pour WebSocket (optionnel, si besoin)
+# flask-socketio>=5.3.0
+# python-socketio>=5.9.0
+
+# Async support (optionnel)
+# aiohttp>=3.8.0
+
+# Testing (optionnel)
+# pytest>=7.4.0
+# pytest-flask>=1.2.0

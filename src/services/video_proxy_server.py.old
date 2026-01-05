@@ -1,0 +1,373 @@
+# video_proxy_server.py
+# Python 3.10+
+# Dépendances: fastapi, uvicorn, opencv-python, numpy
+# Installation: pip install fastapi uvicorn opencv-python numpy
+
+import argparse
+import logging
+import signal
+import sys
+import time
+import threading
+from collections import deque
+from dataclasses import dataclass
+from typing import Deque, Optional, Tuple
+import shutil
+import subprocess
+
+import cv2
+import numpy as np
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import uvicorn
+
+
+@dataclass
+class ProxyConfig:
+    source: str
+    fps: int = 25
+    buffer_size: int = 50  # frames (encoded JPEG)
+    jpeg_quality: int = 80
+    reconnect_interval: float = 5.0  # seconds
+
+
+class VideoProxy:
+    def __init__(self, config: ProxyConfig):
+        self.cfg = config
+
+        # Shared state
+        self._buffer: Deque[bytes] = deque(maxlen=self.cfg.buffer_size)
+        self._latest_jpeg: Optional[bytes] = None
+        self._latest_raw: Optional[np.ndarray] = None
+        self._latest_shape: Optional[Tuple[int, int]] = None  # (H, W)
+        self._running = threading.Event()
+        self._running.set()
+
+        self._lock = threading.Lock()
+        self._cap: Optional[cv2.VideoCapture] = None
+        self._capture_thread = threading.Thread(target=self._capture_loop, name="capture", daemon=True)
+
+    def start(self):
+        logging.info("Démarrage du thread de capture…")
+        self._capture_thread.start()
+
+    def stop(self):
+        logging.info("Arrêt du proxy vidéo…")
+        self._running.clear()
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+
+    def change_source(self, new_source: str):
+        logging.info(f"Changement de source: {new_source}")
+        with self._lock:
+            self.cfg.source = new_source
+            if self._cap:
+                try:
+                    self._cap.release()
+                except Exception:
+                    pass
+            self._cap = None  # force reconnexion dans la boucle
+
+    def _open_capture(self) -> Optional[cv2.VideoCapture]:
+        logging.info(f"Connexion à la source: {self.cfg.source}")
+        cap = cv2.VideoCapture(self.cfg.source, cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            logging.warning("Impossible d'ouvrir la source vidéo.")
+            return None
+        try:
+            # Certaines plateformes ignorent ce paramètre mais ça vaut la peine d'essayer.
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+        except Exception:
+            pass
+        logging.info("Source vidéo connectée.")
+        return cap
+
+    def _encode_jpeg(self, frame: np.ndarray) -> Optional[bytes]:
+        try:
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, int(self.cfg.jpeg_quality)])
+            if not ok:
+                return None
+            return buf.tobytes()
+        except Exception as e:
+            logging.error(f"Erreur encodage JPEG: {e}")
+            return None
+
+    def _capture_loop(self):
+        # Placeholder noir tant que pas d'image
+        self._latest_jpeg = self._black_jpeg(640, 480)
+        self._latest_shape = (480, 640)
+
+        while self._running.is_set():
+            # Assurer cap ouvert
+            if self._cap is None or not self._cap.isOpened():
+                self._cap = self._open_capture()
+                if self._cap is None:
+                    time.sleep(self.cfg.reconnect_interval)
+                    continue
+
+            # Lire une image
+            ret, frame = self._cap.read()
+            if not ret or frame is None:
+                logging.warning("Perte du flux. Tentative de reconnexion dans 5s…")
+                try:
+                    self._cap.release()
+                except Exception:
+                    pass
+                self._cap = None
+                time.sleep(self.cfg.reconnect_interval)
+                continue
+
+            # Mettre à jour état partagé
+            h, w = frame.shape[:2]
+            jpeg = self._encode_jpeg(frame)
+            if jpeg is None:
+                continue
+
+            with self._lock:
+                self._latest_raw = frame
+                self._latest_shape = (h, w)
+                self._latest_jpeg = jpeg
+                self._buffer.append(jpeg)
+
+        logging.info("Capture loop arrêtée.")
+
+    def _black_jpeg(self, w: int, h: int) -> bytes:
+        frame = np.zeros((h, w, 3), dtype=np.uint8)
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        return buf.tobytes() if ok else b""
+
+    def get_latest_jpeg(self) -> bytes:
+        with self._lock:
+            if self._latest_jpeg is not None:
+                return self._latest_jpeg
+        # Fallback
+        return self._black_jpeg(640, 480)
+
+    def get_latest_raw(self) -> Tuple[Optional[np.ndarray], Optional[Tuple[int, int]]]:
+        with self._lock:
+            if self._latest_raw is None:
+                return None, self._latest_shape
+            return self._latest_raw.copy(), self._latest_shape
+
+    def mjpeg_generator(self, fps: Optional[int] = None):
+        boundary = "frame"
+        interval = 1.0 / float(fps or self.cfg.fps)
+        next_t = time.perf_counter()
+        while True:
+            # Rythmer à FPS fixe
+            now = time.perf_counter()
+            if now < next_t:
+                time.sleep(next_t - now)
+            next_t += interval
+
+            jpeg = self.get_latest_jpeg()
+            yield (
+                b"--" + boundary.encode() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                + f"Content-Length: {len(jpeg)}\r\n\r\n".encode()
+                + jpeg
+                + b"\r\n"
+            )
+
+
+class RtspPusher:
+    """
+    Pousse un flux RTSP vers rtsp-simple-server via ffmpeg.
+    Lit les images brutes depuis VideoProxy à cadence fixe.
+    """
+    def __init__(self, proxy: VideoProxy, target_url: str, fps: int):
+        self.proxy = proxy
+        self.target = target_url
+        self.fps = fps
+        self._running = threading.Event()
+        self._running.set()
+        self._thread = threading.Thread(target=self._loop, name="rtsp-pusher", daemon=True)
+        self._proc: Optional[subprocess.Popen] = None
+
+    def start(self):
+        if not shutil.which("ffmpeg"):
+            logging.error("ffmpeg introuvable. RTSP non démarré.")
+            return
+        logging.info(f"RTSP sortie activée vers: {self.target}")
+        self._thread.start()
+
+    def stop(self):
+        self._running.clear()
+        if self._proc:
+            try:
+                self._proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+            self._proc = None
+
+    def _start_ffmpeg(self, w: int, h: int) -> Optional[subprocess.Popen]:
+        # Pipeline: rawvideo (bgr24) -> libx264 -> RTSP (tcp)
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "warning",
+            "-re",
+            "-f", "rawvideo",
+            "-pix_fmt", "bgr24",
+            "-s", f"{w}x{h}",
+            "-r", str(self.fps),
+            "-i", "-",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-tune", "zerolatency",
+            "-pix_fmt", "yuv420p",
+            "-f", "rtsp",
+            "-rtsp_transport", "tcp",
+            self.target,
+        ]
+        try:
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+            logging.info("Processus ffmpeg RTSP démarré.")
+            return proc
+        except Exception as e:
+            logging.error(f"Échec démarrage ffmpeg: {e}")
+            return None
+
+    def _loop(self):
+        # Attendre la première image pour obtenir dimensions
+        logging.info("RTSP: attente de la première image…")
+        while self._running.is_set():
+            frame, shape = self.proxy.get_latest_raw()
+            if frame is not None and shape is not None:
+                h, w = shape
+                self._proc = self._start_ffmpeg(w, h)
+                if not self._proc or not self._proc.stdin:
+                    logging.error("RTSP désactivé (ffmpeg KO).")
+                    return
+                break
+            time.sleep(0.1)
+
+        interval = 1.0 / float(self.fps)
+        next_t = time.perf_counter()
+
+        while self._running.is_set():
+            now = time.perf_counter()
+            if now < next_t:
+                time.sleep(next_t - now)
+            next_t += interval
+
+            frame, _ = self.proxy.get_latest_raw()
+            if frame is None:
+                continue
+            try:
+                self._proc.stdin.write(frame.tobytes())
+            except Exception as e:
+                logging.warning(f"RTSP: ffmpeg interrompu ({e}). Tentative de redémarrage…")
+                self.stop()
+                # Reprise
+                frame2, shape2 = self.proxy.get_latest_raw()
+                if frame2 is None or shape2 is None:
+                    time.sleep(1.0)
+                    continue
+                h2, w2 = shape2
+                self._proc = self._start_ffmpeg(w2, h2)
+                if not self._proc or not self._proc.stdin:
+                    logging.error("RTSP: redémarrage ffmpeg impossible, arrêt de la sortie RTSP.")
+                    return
+
+
+def build_app(proxy: VideoProxy, fps: int) -> FastAPI:
+    app = FastAPI(title="Video Proxy Server", version="1.0.0")
+
+    @app.get("/stream.mjpg")
+    def stream_mjpg():
+        boundary = "frame"
+        return StreamingResponse(
+            proxy.mjpeg_generator(fps=fps),
+            media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+        )
+
+    @app.post("/change_source")
+    def change_source(new_source: str):
+        logging.info(f"Requête de changement de source reçue: {new_source}")
+        proxy.cfg.source = new_source
+        proxy.stop()          # Arrête la capture actuelle
+        proxy._cap = None     # Force la reconnexion
+        proxy.start()         # Redémarre le thread
+        return {"status": "ok", "new_source": new_source}
+
+    @app.get("/health")
+    def health():
+        # Simple health check
+        return {"status": "ok", "fps": fps}
+
+    return app
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Serveur proxy vidéo MJPEG/RTSP (type go2rtc simplifié).")
+    p.add_argument("--source", required=True, help="URL caméra (ex: http://.../mjpg/video.mjpg ou rtsp://...)")
+    p.add_argument("--port", type=int, default=8080, help="Port HTTP local (par défaut 8080)")
+    p.add_argument("--fps", type=int, default=25, help="Fréquence d'images de sortie (par défaut 25)")
+    p.add_argument("--buffer", type=int, default=50, help="Taille du tampon circulaire (frames JPEG)")
+    p.add_argument("--quality", type=int, default=80, help="Qualité JPEG (0-100, par défaut 80)")
+    p.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="URL RTSP de sortie (optionnel) via ffmpeg/rtsp-simple-server, ex: rtsp://127.0.0.1:8554/proxy",
+    )
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    cfg = ProxyConfig(
+        source=args.source,
+        fps=args.fps,
+        buffer_size=args.buffer,
+        jpeg_quality=args.quality,
+    )
+    proxy = VideoProxy(cfg)
+    proxy.start()
+
+    # RTSP optionnel
+    rtsp_pusher = None
+    if args.output and args.output.lower().startswith("rtsp://"):
+        rtsp_pusher = RtspPusher(proxy, args.output, fps=cfg.fps)
+        rtsp_pusher.start()
+
+    app = build_app(proxy, fps=cfg.fps)
+
+    def shutdown(signum, frame):
+        logging.info("Signal reçu, arrêt…")
+        if rtsp_pusher:
+            rtsp_pusher.stop()
+        proxy.stop()
+        # uvicorn s'arrête quand la boucle ferme; ici on quitte fort:
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
+    logging.info(f"Proxy server started on http://127.0.0.1:{args.port}/stream.mjpg")
+    logging.info("Utilisez cette URL avec FFmpeg, par exemple:")
+    logging.info(f"ffmpeg -i http://127.0.0.1:{args.port}/stream.mjpg -t 60 -c:v libx264 output.mp4")
+
+    if args.output:
+        logging.info(f"RTSP output (si ffmpeg & rtsp-simple-server actifs): {args.output}")
+
+    uvicorn.run(app, host="0.0.0.0", port=int(args.port), log_level="info")
+
+
+if __name__ == "__main__":
+    main()

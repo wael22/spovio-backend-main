@@ -1,0 +1,147 @@
+# Docker ignore file pour PadelVar
+# Exclut les fichiers inutiles du contexte de build Docker
+
+# Répertoires de développement
+.git/
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+.pytest_cache/
+.tox/
+.cache
+
+# Environnements virtuels
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Base de données locale
+*.db
+*.sqlite3
+app.db
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Fichiers temporaires
+temp_recordings/
+static/recordings/
+static/temp/
+*.tmp
+*.temp
+
+# Configuration locale
+.env
+.env.local
+.env.development
+.env.test
+config.local.py
+
+# Documentation et README
+*.md
+docs/
+README*
+CHANGELOG*
+LICENSE
+
+# Scripts de test et développement
+test_*.py
+*_test.py
+tests/
+check_*.py
+debug_*.py
+diagnostic_*.py
+fix_*.py
+quick_*.py
+create_*.py
+reset_*.py
+cleanup_*.py
+migrate_*.py
+setup_*.py
+start_*.py
+stop_*.py
+final_*.py
+validate_*.py
+verify_*.py
+apply_*.py
+configure_*.py
+nettoyer_*.py
+force_*.py
+repair_*.py
+search_*.py
+full_*.py
+global_*.py
+simple_*.py
+temp_*.py
+
+# Scripts batch Windows
+*.bat
+*.ps1
+
+# Configuration d'IDE
+.DS_Store
+Thumbs.db
+.editorconfig
+.gitignore
+.gitattributes
+
+# Rapports et analyses
+*_RAPPORT.md
+*_SUMMARY.md
+ANALYSE_*.md
+GUIDE_*.md
+INSTRUCTIONS_*.md
+MIGRATION_*.md
+REFACTORING.md
+CORRECTIONS_*.md
+NETTOYAGE_*.md
+MJPEG_*.md
+GOOGLE_*.md
+UPLOAD_*.md
+
+# Docker
+Dockerfile.dev
+docker-compose.override.yml
+docker-compose.dev.yml
+
+# Fichiers de sauvegarde
+*.backup
+*.bak
+*.backup2
+*.old
+*.new
+
+# Node modules (si présents)
+node_modules/
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# Certificats et clés (sécurité)
+*.pem
+*.key
+*.crt
+*.cert
+
+# Fichiers OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
