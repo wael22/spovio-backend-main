@@ -98,7 +98,9 @@ def create_app(config_name=None):
     migrate = Migrate(app, db)
     jwt = JWTManager(app)
     
+    
     # Configuration CORS
+    print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
     CORS(app, 
          origins=app.config['CORS_ORIGINS'], 
          supports_credentials=True,
