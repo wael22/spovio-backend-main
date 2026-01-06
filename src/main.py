@@ -148,6 +148,10 @@ def create_app(config_name=None):
     # app.register_blueprint(recording_v2_bp, url_prefix='/api/recording/v2')  # Temporarily disabled
     # app.register_blueprint(recording_api, url_prefix='/api/recording/v3')  # Temporarily disabled
     app.register_blueprint(diagnostic_bp, url_prefix='/api/diagnostic')
+    
+    # ⚠️ TEMPORAIRE - Endpoint pour créer compte de test en production
+    from src.routes.test_admin import test_bp
+    app.register_blueprint(test_bp, url_prefix='/api/test-admin')
     # app.register_blueprint(payment_bp, url_prefix='/api/payment')  # Temporarily disabled
     app.register_blueprint(system_bp, url_prefix='/api/system')
     app.register_blueprint(highlights_bp)  # 🆕 Highlights (prefix in blueprint)
