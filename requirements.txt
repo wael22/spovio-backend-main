@@ -9,6 +9,7 @@ werkzeug>=2.3.0
 # Base de données
 flask-sqlalchemy>=3.0.0
 flask-migrate>=4.0.0
+psycopg2-binary>=2.9.9
 
 # Authentification et Sécurité
 PyJWT>=2.8.0
