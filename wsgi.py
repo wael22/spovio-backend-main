@@ -28,6 +28,25 @@ from src.main import create_app
 env = os.environ.get('FLASK_ENV', 'production')
 app = create_app(env)
 
+# Auto-initialize database if RUN_DB_INIT flag is set (Railway)
+if os.environ.get('RUN_DB_INIT', '').lower() == 'true':
+    print("🔄 RUN_DB_INIT detected - Initializing database...")
+    try:
+        from src.models.database import db
+        with app.app_context():
+            db.create_all()
+            print("✅ Database initialized successfully!")
+            
+            # List created tables
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            print(f"📊 Created {len(tables)} tables: {', '.join(sorted(tables)[:5])}...")
+    except Exception as e:
+        print(f"⚠️ Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
+
 # This is what Gunicorn will use
 application = app
 
