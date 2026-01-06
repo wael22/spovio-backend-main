@@ -25,7 +25,6 @@ if env_file.exists():
 from src.main import create_app
 
 # Create the application instance
-# Use production config in production, development otherwise
 env = os.environ.get('FLASK_ENV', 'production')
 app = create_app(env)
 
