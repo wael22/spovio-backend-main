@@ -3,7 +3,7 @@ Fichier principal de l'application PadelVar
 Factory pattern pour créer l'instance Flask
 """
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash
 from flask_migrate import Migrate
@@ -99,13 +99,40 @@ def create_app(config_name=None):
     jwt = JWTManager(app)
     
     
-    # Configuration CORS - Configuration simple et directe
+    # Configuration CORS MANUELLE - Solution finale
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
+    allowed_origins = app.config['CORS_ORIGINS']
     
-    # Utiliser la configuration la plus simple possible
-    CORS(app, 
-         resources={r"/*": {"origins": app.config['CORS_ORIGINS']}},
-         supports_credentials=True)
+    @app.after_request
+    def add_cors_headers(response):
+        """Ajouter les headers CORS manuellement pour tous les endpoints"""
+        origin = request.headers.get('Origin')
+        
+        # Vérifier si l'origin est autorisée
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+            response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Max-Age'] = '3600'
+        
+        return response
+    
+    # Gérer les preflight OPTIONS requests
+    @app.before_request
+    def handle_preflight():
+        """Gérer les requêtes OPTIONS (preflight)"""
+        if request.method == 'OPTIONS':
+            response = app.make_default_options_response()
+            origin = request.headers.get('Origin')
+            if origin in allowed_origins:
+                response.headers['Access-Control-Allow-Origin'] = origin
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+                response.headers['Access-Control-Max-Age'] = '3600'
+            return response
     
     # Enregistrement des blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
