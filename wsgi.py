@@ -1,6 +1,5 @@
 """
 WSGI entry point for production deployment
-Used by Gunicorn to run the application
 """
 import os
 import sys
