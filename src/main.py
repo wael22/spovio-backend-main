@@ -99,21 +99,27 @@ def create_app(config_name=None):
     jwt = JWTManager(app)
     
     
-    # Configuration CORS MANUELLE - FORCE pour Vercel (Gunicorn supprime Origin header)
+    # Configuration CORS - Support Vercel production + preview URLs
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
-    VERCEL_ORIGIN = 'https://spovio-frontend.vercel.app'
+    VERCEL_PRODUCTION = 'https://spovio-frontend.vercel.app'
     
     @app.after_request
     def add_cors_headers(response):
-        """Ajouter les headers CORS - FORCÉ pour Vercel"""
-        # Gunicorn/Render supprime le header Origin, on force pour Vercel
-        response.headers['Access-Control-Allow-Origin'] = VERCEL_ORIGIN
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
-        response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization'
-        response.headers['Access-Control-Max-Age'] = '3600'
-        print(f"✅ CORS headers forcés pour {VERCEL_ORIGIN}")
+        """Ajouter les headers CORS - Support Vercel preview URLs"""
+        origin = request.headers.get('Origin', '')
+        
+        # Allow Vercel production + all Vercel preview URLs
+        if origin == VERCEL_PRODUCTION or '.vercel.app' in origin or 'localhost' in origin:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+            response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Max-Age'] = '3600'
+            print(f"✅ CORS allowed for {origin}")
+        else:
+            print(f"⚠️ CORS rejected for {origin}")
+        
         return response
     
     # Gérer les preflight OPTIONS requests
@@ -121,13 +127,16 @@ def create_app(config_name=None):
     def handle_preflight():
         """Gérer les requêtes OPTIONS (preflight)"""
         if request.method == 'OPTIONS':
-            print(f"⚡ OPTIONS request - forcing CORS for {VERCEL_ORIGIN}")
-            response = app.make_default_options_response()
-            response.headers['Access-Control-Allow-Origin'] = VERCEL_ORIGIN
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
-            response.headers['Access-Control-Max-Age'] = '3600'
+            origin = request.headers.get('Origin', '')
+            
+            if origin == VERCEL_PRODUCTION or '.vercel.app' in origin or 'localhost' in origin:
+                print(f"⚡ OPTIONS request - allowing CORS for {origin}")
+                response = app.make_default_options_response()
+                response.headers['Access-Control-Allow-Origin'] = origin
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+                response.headers['Access-Control-Max-Age'] = '3600'
             print(f"✅ OPTIONS response avec CORS forcé")
             return response
     
