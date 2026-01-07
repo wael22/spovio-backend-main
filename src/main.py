@@ -108,12 +108,13 @@ def create_app(config_name=None):
     # Configuration CORS avec flask-cors (PROPER way to handle Authorization header)
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
     
+    # flask-cors accepts regex patterns for origins
     CORS(app, 
          origins=[
-             'https://spovio-frontend.vercel.app',
-             'https://*.vercel.app',  # All Vercel preview URLs
-             'http://localhost:8080',
-             'http://localhost:5173'
+             r"https://spovio-frontend\.vercel\.app",
+             r"https://.*\.vercel\.app",  # All Vercel preview URLs (regex)
+             r"http://localhost:8080",
+             r"http://localhost:5173"
          ],
          supports_credentials=True,
          allow_headers=['Content-Type', 'Authorization'],
