@@ -82,18 +82,30 @@ def get_current_user_from_token():
     """
     # Try JWT token first
     token = get_token_from_header()
+    print(f"[JWT DEBUG] Token from header: {token[:20] if token else 'None'}...")
+    
     if token:
         payload = verify_jwt_token(token)
+        print(f"[JWT DEBUG] Token verification result: {payload}")
+        
         if payload:
             user_id = payload.get('user_id')
+            print(f"[JWT DEBUG] User ID from payload: {user_id}")
+            
             if user_id:
-                return User.query.get(user_id)
+                user = User.query.get(user_id)
+                print(f"[JWT DEBUG] User found: {user.email if user else 'None'}")
+                return user
+        else:
+            print(f"[JWT DEBUG] Token verification failed!")
     
     # Fallback to session-based auth (for backward compatibility)
     user_id = session.get('user_id')
     if user_id:
+        print(f"[JWT DEBUG] Fallback to session, user_id: {user_id}")
         return User.query.get(user_id)
     
+    print(f"[JWT DEBUG] No valid authentication found")
     return None
 
 
