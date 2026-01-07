@@ -119,8 +119,9 @@ def create_app(config_name=None):
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
-            response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization'
+            # CRITICAL: Include both Authorization and authorization for maximum compatibility
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Requested-With'
+            response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization'
             response.headers['Access-Control-Max-Age'] = '3600'
             print(f"✅ CORS allowed for {origin}")
         else:
@@ -141,10 +142,12 @@ def create_app(config_name=None):
                 response.headers['Access-Control-Allow-Origin'] = origin
                 response.headers['Access-Control-Allow-Credentials'] = 'true'
                 response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+                # CRITICAL: Include both Authorization and authorization
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Requested-With'
+                response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization'
                 response.headers['Access-Control-Max-Age'] = '3600'
-            print(f"✅ OPTIONS response avec CORS forcé")
-            return response
+                print(f"✅ OPTIONS response avec CORS forcé")
+                return response
     
     # Enregistrement des blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
