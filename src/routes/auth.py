@@ -11,6 +11,7 @@ from ..services.email_verification_service import (
     send_verification_email,
     verify_email_code
 )
+from ..utils.jwt_helpers import generate_jwt_token, get_current_user_from_token  # 🆕 JWT Support
 import re
 import traceback
 import logging # Ajout du logger
@@ -114,10 +115,21 @@ def login():
                 'email': email
             }), 403
         
+        # 🆕 Générer JWT token pour cross-origin auth
+        jwt_token = generate_jwt_token(user.id, user.role.value)
+        
+        # Maintenir la session pour backward compatibility
         session.permanent = True
         session['user_id'] = user.id
         session['user_role'] = user.role.value
-        response = make_response(jsonify({'message': 'Connexion réussie', 'user': user.to_dict()}), 200)
+        
+        logger.info(f"✅ Login réussi: {email} - Token JWT généré")
+        
+        response = make_response(jsonify({
+            'message': 'Connexion réussie',
+            'user': user.to_dict(),
+            'token': jwt_token  # 🆕 JWT token for frontend
+        }), 200)
         return response
     except Exception as e:
         traceback.print_exc()
@@ -155,15 +167,14 @@ def logout():
 
 @auth_bp.route('/me', methods=['GET'])
 def get_current_user():
-    # ... (code de la fonction get_current_user inchangé)
+    """Get current user - supports both JWT and session auth"""
     try:
-        user_id = session.get("user_id")
-        if not user_id:
-            return jsonify({'error': 'Non authentifié'}), 401
-        user = User.query.get(user_id)
+        # 🆕 Support JWT token authentication
+        user = get_current_user_from_token()
+        
         if not user:
-            session.clear()
-            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+            return jsonify({'error': 'Non authentifié'}), 401
+        
         return jsonify({'user': user.to_dict()}), 200
     except Exception as e:
         traceback.print_exc()
@@ -321,15 +332,21 @@ def google_authenticate():
             )
             db.session.add(user)
             db.session.commit()
+        
+        # 🆕 Générer JWT token
+        jwt_token = generate_jwt_token(user.id, user.role.value)
             
-        # Connecter l'utilisateur
+        # Connecter l'utilisateur (session pour backward compatibility)
         session.permanent = True
         session['user_id'] = user.id
         session['user_role'] = user.role.value
         
+        logger.info(f"✅ Google auth réussi: {email} - Token JWT généré")
+        
         return jsonify({
             'message': 'Authentification Google réussie',
-            'user': user.to_dict()
+            'user': user.to_dict(),
+            'token': jwt_token  # 🆕 JWT token for frontend
         }), 200
         
     except Exception as e:
@@ -412,16 +429,20 @@ def verify_email():
         user.email_verification_sent_at = None
         db.session.commit()
         
-        # Connecter automatiquement l'utilisateur
+        # 🆕 Générer JWT token
+        jwt_token = generate_jwt_token(user.id, user.role.value)
+        
+        # Connecter automatiquement l'utilisateur (session pour backward compatibility)
         session.permanent = True
         session['user_id'] = user.id
         session['user_role'] = user.role.value
         
-        logger.info(f"✅ Email vérifié et utilisateur connecté: {email}")
+        logger.info(f"✅ Email vérifié et utilisateur connecté: {email} - Token JWT généré")
         
         return jsonify({
             'message': 'Email vérifié avec succès',
-            'user': user.to_dict()
+            'user': user.to_dict(),
+            'token': jwt_token  # 🆕 JWT token for frontend
         }), 200
         
     except Exception as e:
