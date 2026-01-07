@@ -111,25 +111,25 @@ def create_app(config_name=None):
     def cors_origin_validator(origin):
         """Dynamically validate CORS origins to support Vercel preview URLs"""
         if not origin:
-            return False
+            return None
         
         # Allow production Vercel URL
         if origin == 'https://spovio-frontend.vercel.app':
             print(f"✅ CORS: Allowing production URL: {origin}")
-            return True
+            return origin
         
         # Allow all Vercel preview URLs for spovio-frontend
         if 'spovio-frontend' in origin and '.vercel.app' in origin:
             print(f"✅ CORS: Allowing Vercel preview URL: {origin}")
-            return True
+            return origin
         
         # Allow localhost for development
         if origin.startswith('http://localhost:'):
             print(f"✅ CORS: Allowing localhost: {origin}")
-            return True
+            return origin
         
         print(f"⚠️ CORS: Origin rejected: {origin}")
-        return False
+        return None
     
     CORS(app, 
          origins=cors_origin_validator,
