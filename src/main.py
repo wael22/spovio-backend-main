@@ -119,9 +119,9 @@ def create_app(config_name=None):
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-            # CRITICAL: Include X-Auth-Token custom header to bypass CORS restrictions
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Auth-Token, X-Requested-With'
-            response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization, X-Auth-Token'
+            # CRITICAL: Include X-Token custom header (simple name to avoid proxy filtering)
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Token, X-Requested-With'
+            response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization, X-Token'
             response.headers['Access-Control-Max-Age'] = '3600'
             print(f"✅ CORS allowed for {origin}")
         else:
@@ -142,9 +142,9 @@ def create_app(config_name=None):
                 response.headers['Access-Control-Allow-Origin'] = origin
                 response.headers['Access-Control-Allow-Credentials'] = 'true'
                 response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-                # CRITICAL: Include X-Auth-Token custom header
-                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Auth-Token, X-Requested-With'
-                response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization, X-Auth-Token'
+                # CRITICAL: Include X-Token custom header (simple name)
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Token, X-Requested-With'
+                response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization, X-Token'
                 response.headers['Access-Control-Max-Age'] = '3600'
                 print(f"✅ OPTIONS response avec CORS forcé")
                 return response

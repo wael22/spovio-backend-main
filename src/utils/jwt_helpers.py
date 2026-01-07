@@ -59,7 +59,7 @@ def verify_jwt_token(token: str) -> dict:
 
 def get_token_from_header() -> str:
     """
-    Extract JWT token from X-Auth-Token header (custom header to bypass CORS)
+    Extract JWT token from X-Token header (simple custom header to bypass CORS and proxy filtering)
     Falls back to Authorization header for backward compatibility
     
     Returns:
@@ -68,10 +68,10 @@ def get_token_from_header() -> str:
     # Debug: Print ALL headers
     print(f"[JWT DEBUG] All headers: {dict(request.headers)}")
     
-    # Try custom header first (bypasses CORS restrictions)
-    token = request.headers.get('X-Auth-Token', '')
+    # Try custom header first (simple name to avoid proxy filtering)
+    token = request.headers.get('X-Token', '')
     if token:
-        print(f"[JWT DEBUG] Token from X-Auth-Token: {token[:20]}...")
+        print(f"[JWT DEBUG] ✅ Token from X-Token: {token[:20]}...")
         return token
     
     # Fallback to Authorization header
@@ -83,7 +83,7 @@ def get_token_from_header() -> str:
         print(f"[JWT DEBUG] Extracted token from Authorization: {token[:20]}...")
         return token
     
-    print(f"[JWT DEBUG] No valid token found in headers")
+    print(f"[JWT DEBUG] ❌ No valid token found in headers")
     return None
 
 
