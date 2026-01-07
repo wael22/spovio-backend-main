@@ -98,6 +98,12 @@ def create_app(config_name=None):
     migrate = Migrate(app, db)
     jwt = JWTManager(app)
     
+    # 🍪 Configuration des cookies de session pour cross-origin (Vercel → Railway)
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Permet les cookies cross-origin
+    app.config['SESSION_COOKIE_SECURE'] = True      # Requis avec SameSite=None (HTTPS uniquement)
+    app.config['SESSION_COOKIE_HTTPONLY'] = True    # Sécurité: empêche l'accès JS
+    app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 jours
+    
     
     # Configuration CORS - Support Vercel production + preview URLs
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
