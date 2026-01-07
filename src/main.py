@@ -105,17 +105,34 @@ def create_app(config_name=None):
     app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 jours
     
     
-    # Configuration CORS avec flask-cors (PROPER way to handle Authorization header)
+    # Configuration CORS avec flask-cors - Dynamic origin validation for Vercel previews
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
     
-    # flask-cors accepts regex patterns for origins
+    def cors_origin_validator(origin):
+        """Dynamically validate CORS origins to support Vercel preview URLs"""
+        if not origin:
+            return False
+        
+        # Allow production Vercel URL
+        if origin == 'https://spovio-frontend.vercel.app':
+            print(f"✅ CORS: Allowing production URL: {origin}")
+            return True
+        
+        # Allow all Vercel preview URLs for spovio-frontend
+        if 'spovio-frontend' in origin and '.vercel.app' in origin:
+            print(f"✅ CORS: Allowing Vercel preview URL: {origin}")
+            return True
+        
+        # Allow localhost for development
+        if origin.startswith('http://localhost:'):
+            print(f"✅ CORS: Allowing localhost: {origin}")
+            return True
+        
+        print(f"⚠️ CORS: Origin rejected: {origin}")
+        return False
+    
     CORS(app, 
-         origins=[
-             r"https://spovio-frontend\.vercel\.app",
-             r"https://.*\.vercel\.app",  # All Vercel preview URLs (regex)
-             r"http://localhost:8080",
-             r"http://localhost:5173"
-         ],
+         origins=cors_origin_validator,
          supports_credentials=True,
          allow_headers=['Content-Type', 'Authorization', 'X-API-Key'],
          expose_headers=['Content-Type', 'Authorization', 'X-API-Key'],
