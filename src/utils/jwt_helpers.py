@@ -59,19 +59,26 @@ def verify_jwt_token(token: str) -> dict:
 
 def get_token_from_header() -> str:
     """
-    Extract JWT token from Authorization header (standard JWT authentication)
+    Extract JWT token from X-API-Key header (commonly allowed in CORS)
+    Falls back to Authorization header for backward compatibility
     
     Returns:
         str: Token string or None
     """
-    auth_header = request.headers.get('Authorization', '')
-    
-    if auth_header.startswith('Bearer '):
-        token = auth_header[7:]  # Remove 'Bearer ' prefix
-        print(f"[JWT DEBUG] ✅ Token from Authorization header: {token[:20]}...")
+    # Try X-API-Key first (commonly allowed in CORS)
+    token = request.headers.get('X-API-Key', '')
+    if token:
+        print(f"[JWT DEBUG] ✅ Token from X-API-Key: {token[:20]}...")
         return token
     
-    print(f"[JWT DEBUG] ❌ No valid Authorization header found")
+    # Fallback to Authorization header
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:]
+        print(f"[JWT DEBUG] ✅ Token from Authorization: {token[:20]}...")
+        return token
+    
+    print(f"[JWT DEBUG] ❌ No valid token found")
     return None
 
 

@@ -117,8 +117,8 @@ def create_app(config_name=None):
              r"http://localhost:5173"
          ],
          supports_credentials=True,
-         allow_headers=['Content-Type', 'Authorization'],
-         expose_headers=['Content-Type', 'Authorization'],
+         allow_headers=['Content-Type', 'Authorization', 'X-API-Key'],
+         expose_headers=['Content-Type', 'Authorization', 'X-API-Key'],
          methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
          max_age=3600
     )
