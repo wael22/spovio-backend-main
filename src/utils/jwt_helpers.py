@@ -64,11 +64,18 @@ def get_token_from_header() -> str:
     Returns:
         str: Token string or None
     """
+    # Debug: Print ALL headers
+    print(f"[JWT DEBUG] All headers: {dict(request.headers)}")
+    
     auth_header = request.headers.get('Authorization', '')
+    print(f"[JWT DEBUG] Authorization header value: '{auth_header}'")
     
     if auth_header.startswith('Bearer '):
-        return auth_header[7:]  # Remove 'Bearer ' prefix
+        token = auth_header[7:]  # Remove 'Bearer ' prefix
+        print(f"[JWT DEBUG] Extracted token: {token[:20]}...")
+        return token
     
+    print(f"[JWT DEBUG] No valid Bearer token found")
     return None
 
 
