@@ -105,49 +105,22 @@ def create_app(config_name=None):
     app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 jours
     
     
-    # Configuration CORS - Support Vercel production + preview URLs
+    # Configuration CORS avec flask-cors (PROPER way to handle Authorization header)
     print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
-    VERCEL_PRODUCTION = 'https://spovio-frontend.vercel.app'
     
-    @app.after_request
-    def add_cors_headers(response):
-        """Ajouter les headers CORS - Support Vercel preview URLs"""
-        origin = request.headers.get('Origin', '')
-        
-        # Allow Vercel production + all Vercel preview URLs
-        if origin == VERCEL_PRODUCTION or '.vercel.app' in origin or 'localhost' in origin:
-            response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-            # CRITICAL: Include X-Token custom header (simple name to avoid proxy filtering)
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Token, X-Requested-With'
-            response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization, X-Token'
-            response.headers['Access-Control-Max-Age'] = '3600'
-            print(f"✅ CORS allowed for {origin}")
-        else:
-            print(f"⚠️ CORS rejected for {origin}")
-        
-        return response
-    
-    # Gérer les preflight OPTIONS requests
-    @app.before_request
-    def handle_preflight():
-        """Gérer les requêtes OPTIONS (preflight)"""
-        if request.method == 'OPTIONS':
-            origin = request.headers.get('Origin', '')
-            
-            if origin == VERCEL_PRODUCTION or '.vercel.app' in origin or 'localhost' in origin:
-                print(f"⚡ OPTIONS request - allowing CORS for {origin}")
-                response = app.make_default_options_response()
-                response.headers['Access-Control-Allow-Origin'] = origin
-                response.headers['Access-Control-Allow-Credentials'] = 'true'
-                response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-                # CRITICAL: Include X-Token custom header (simple name)
-                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, authorization, X-Token, X-Requested-With'
-                response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization, authorization, X-Token'
-                response.headers['Access-Control-Max-Age'] = '3600'
-                print(f"✅ OPTIONS response avec CORS forcé")
-                return response
+    CORS(app, 
+         origins=[
+             'https://spovio-frontend.vercel.app',
+             'https://*.vercel.app',  # All Vercel preview URLs
+             'http://localhost:8080',
+             'http://localhost:5173'
+         ],
+         supports_credentials=True,
+         allow_headers=['Content-Type', 'Authorization'],
+         expose_headers=['Content-Type', 'Authorization'],
+         methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+         max_age=3600
+    )
     
     # Enregistrement des blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
