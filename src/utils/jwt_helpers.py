@@ -59,32 +59,19 @@ def verify_jwt_token(token: str) -> dict:
 
 def get_token_from_header() -> str:
     """
-    Extract JWT token from query parameter (Railway filters all custom headers in CORS)
-    Falls back to Authorization header for backward compatibility
+    Extract JWT token from Authorization header (standard JWT authentication)
     
     Returns:
         str: Token string or None
     """
-    # Try query parameter first (Railway CORS workaround)
-    token = request.args.get('token', '')
-    if token:
-        print(f"[JWT DEBUG] ✅ Token from query param: {token[:20]}...")
-        return token
-    
-    # Try custom header (for non-CORS requests)
-    token = request.headers.get('X-Token', '')
-    if token:
-        print(f"[JWT DEBUG] ✅ Token from X-Token header: {token[:20]}...")
-        return token
-    
-    # Fallback to Authorization header
     auth_header = request.headers.get('Authorization', '')
+    
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]  # Remove 'Bearer ' prefix
-        print(f"[JWT DEBUG] ✅ Token from Authorization: {token[:20]}...")
+        print(f"[JWT DEBUG] ✅ Token from Authorization header: {token[:20]}...")
         return token
     
-    print(f"[JWT DEBUG] ❌ No valid token found (checked query param, X-Token, Authorization)")
+    print(f"[JWT DEBUG] ❌ No valid Authorization header found")
     return None
 
 
