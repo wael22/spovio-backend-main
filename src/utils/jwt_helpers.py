@@ -59,26 +59,50 @@ def verify_jwt_token(token: str) -> dict:
 
 def get_token_from_header() -> str:
     """
-    Extract JWT token from X-API-Key header (commonly allowed in CORS)
-    Falls back to Authorization header for backward compatibility
+    Extract JWT token from headers with full debug logging
     
     Returns:
         str: Token string or None
     """
-    # Try X-API-Key first (commonly allowed in CORS)
-    token = request.headers.get('X-API-Key', '')
-    if token:
-        print(f"[JWT DEBUG] ✅ Token from X-API-Key: {token[:20]}...")
-        return token
+    # Full debug logging
+    print(f"\n{'='*60}")
+    print(f"[JWT DEBUG] Processing: {request.method} {request.path}")
+    print(f"[JWT DEBUG] Origin: {request.headers.get('Origin', 'None')}")
     
-    # Fallback to Authorization header
+    # Print ALL headers received
+    all_headers = dict(request.headers)
+    print(f"[JWT DEBUG] All headers received ({len(all_headers)}):")
+    for key, value in all_headers.items():
+        # Truncate long values for readability
+        display_value = value[:50] + '...' if len(str(value)) > 50 else value
+        print(f"   - {key}: {display_value}")
+    
+    # Try Authorization header (STANDARD)
     auth_header = request.headers.get('Authorization', '')
-    if auth_header.startswith('Bearer '):
-        token = auth_header[7:]
-        print(f"[JWT DEBUG] ✅ Token from Authorization: {token[:20]}...")
-        return token
+    if auth_header:
+        print(f"[JWT DEBUG] ✅ Authorization header FOUND: {auth_header[:30]}...")
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+            print(f"[JWT DEBUG] ✅ Extracted Bearer token, length: {len(token)}")
+            print(f"{'='*60}\n")
+            return token
+        else:
+            print(f"[JWT DEBUG] ⚠️ No 'Bearer ' prefix, using raw value")
+            print(f"{'='*60}\n")
+            return auth_header
+    else:
+        print(f"[JWT DEBUG] ❌ Authorization header NOT FOUND")
     
-    print(f"[JWT DEBUG] ❌ No valid token found")
+    # Fallback: X-API-Key
+    api_key = request.headers.get('X-API-Key', '')
+    if api_key:
+        print(f"[JWT DEBUG] ✅ X-API-Key FOUND, length: {len(api_key)}")
+        print(f"{'='*60}\n")
+        return api_key
+    
+    print(f"[JWT DEBUG] ❌ No valid token found in any header")
+    print(f"[JWT DEBUG] Available headers: {list(all_headers.keys())}")
+    print(f"{'='*60}\n")
     return None
 
 
