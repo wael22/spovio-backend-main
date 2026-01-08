@@ -139,17 +139,15 @@ class ProductionConfig(Config):
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Strict'
-    # CORS_ORIGINS with Vercel support
+    # CORS_ORIGINS - Use dynamic validator in main.py for Vercel preview support
     cors_env = os.environ.get('CORS_ORIGINS', '')
     if cors_env:
         # Use environment variable if provided
         CORS_ORIGINS = [origin.strip() for origin in cors_env.split(',') if origin.strip()]
     else:
-        # Default: Allow Vercel production + all preview URLs
-        CORS_ORIGINS = [
-            'https://spovio-frontend.vercel.app',  # Production
-            '*',  # Allow all origins for now (Vercel previews have dynamic URLs)
-        ]
+        # Empty list - will use cors_origin_validator function in main.py
+        # This allows dynamic validation of Vercel preview URLs
+        CORS_ORIGINS = []
 
 class TestingConfig(Config):
     """Configuration de test."""
