@@ -105,40 +105,71 @@ def create_app(config_name=None):
     app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 jours
     
     
-    # Configuration CORS avec flask-cors - Dynamic origin validation for Vercel previews
-    print(f"🌐 CORS ORIGINS: {app.config['CORS_ORIGINS']}")
+    # =============================================================================
+    # CORS CONFIGURATION - Manual handling for Vercel preview URL support
+    # =============================================================================
     
-    def cors_origin_validator(origin):
-        """Dynamically validate CORS origins to support Vercel preview URLs"""
+    import re
+    
+    def is_origin_allowed(origin):
+        """Check if origin is allowed (including Vercel preview URLs)"""
         if not origin:
-            return None
+            return False
         
         # Allow production Vercel URL
         if origin == 'https://spovio-frontend.vercel.app':
             print(f"✅ CORS: Allowing production URL: {origin}")
-            return origin
+            return True
         
-        # Allow all Vercel preview URLs for spovio-frontend
-        if 'spovio-frontend' in origin and '.vercel.app' in origin:
-            print(f"✅ CORS: Allowing Vercel preview URL: {origin}")
-            return origin
+        # Allow ALL Vercel preview URLs for spovio-frontend
+        vercel_patterns = [
+            r'^https://spovio-frontend-[a-z0-9]+-[a-z0-9-]+\.vercel\.app$',
+            r'^https://spovio-frontend-.*\.vercel\.app$',
+        ]
+        
+        for pattern in vercel_patterns:
+            if re.match(pattern, origin):
+                print(f"✅ CORS: Vercel preview URL allowed: {origin}")
+                return True
         
         # Allow localhost for development
         if origin.startswith('http://localhost:'):
             print(f"✅ CORS: Allowing localhost: {origin}")
-            return origin
+            return True
         
         print(f"⚠️ CORS: Origin rejected: {origin}")
-        return None
+        return False
     
-    CORS(app, 
-         origins=cors_origin_validator,
-         supports_credentials=True,
-         allow_headers=['Content-Type', 'Authorization', 'X-API-Key'],
-         expose_headers=['Content-Type', 'Authorization', 'X-API-Key'],
-         methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-         max_age=3600
-    )
+    @app.before_request
+    def handle_cors_preflight():
+        """Handle CORS preflight OPTIONS requests"""
+        if request.method == 'OPTIONS':
+            origin = request.headers.get('Origin', '')
+            
+            if is_origin_allowed(origin):
+                response = app.make_default_options_response()
+                response.headers['Access-Control-Allow-Origin'] = origin
+                response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-API-Key, Accept, Origin'
+                response.headers['Access-Control-Max-Age'] = '86400'
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
+                print(f"✅ CORS: Preflight handled for {origin}")
+                return response
+    
+    @app.after_request
+    def add_cors_headers(response):
+        """Add CORS headers to all responses"""
+        origin = request.headers.get('Origin', '')
+        
+        if is_origin_allowed(origin):
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-API-Key, Accept, Origin'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        return response
+    
+    print(f"🌐 CORS: Manual handling configured for Vercel preview URLs")
     
     # Enregistrement des blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
