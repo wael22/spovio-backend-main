@@ -106,19 +106,22 @@ def create_app(config_name=None):
     
     
     # =============================================================================
-    # CORS CONFIGURATION - Manual handling for Vercel preview URL support
+    # CORS CONFIGURATION - Manual handling with explicit Authorization support
     # =============================================================================
     
     import re
     
+    # Define allowed headers EXPLICITLY
+    ALLOWED_HEADERS = "Content-Type, Authorization, X-API-Key, Accept, Origin, X-Requested-With"
+    ALLOWED_METHODS = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    
     def is_origin_allowed(origin):
         """Check if origin is allowed (including Vercel preview URLs)"""
         if not origin:
-            return False
+            return True  # Allow requests without origin
         
         # Allow production Vercel URL
         if origin == 'https://spovio-frontend.vercel.app':
-            print(f"✅ CORS: Allowing production URL: {origin}")
             return True
         
         # Allow ALL Vercel preview URLs for spovio-frontend
@@ -129,32 +132,39 @@ def create_app(config_name=None):
         
         for pattern in vercel_patterns:
             if re.match(pattern, origin):
-                print(f"✅ CORS: Vercel preview URL allowed: {origin}")
                 return True
         
         # Allow localhost for development
         if origin.startswith('http://localhost:'):
-            print(f"✅ CORS: Allowing localhost: {origin}")
             return True
         
-        print(f"⚠️ CORS: Origin rejected: {origin}")
         return False
     
     @app.before_request
     def handle_cors_preflight():
-        """Handle CORS preflight OPTIONS requests"""
+        """Handle CORS preflight OPTIONS requests - MUST include Authorization in Allow-Headers"""
         if request.method == 'OPTIONS':
-            origin = request.headers.get('Origin', '')
+            origin = request.headers.get('Origin', '*')
             
+            # Create empty response with 204 status
+            response = app.make_response(('', 204))
+            
+            # Set CORS headers
             if is_origin_allowed(origin):
-                response = app.make_default_options_response()
                 response.headers['Access-Control-Allow-Origin'] = origin
-                response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
-                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-API-Key, Accept, Origin'
-                response.headers['Access-Control-Max-Age'] = '86400'
-                response.headers['Access-Control-Allow-Credentials'] = 'true'
-                print(f"✅ CORS: Preflight handled for {origin}")
-                return response
+            else:
+                response.headers['Access-Control-Allow-Origin'] = '*'
+            
+            response.headers['Access-Control-Allow-Methods'] = ALLOWED_METHODS
+            # CRITICAL: Must explicitly include Authorization!
+            response.headers['Access-Control-Allow-Headers'] = ALLOWED_HEADERS
+            response.headers['Access-Control-Max-Age'] = '86400'
+            
+            print(f"✅ CORS Preflight Response for {origin}:")
+            print(f"   Allow-Methods: {ALLOWED_METHODS}")
+            print(f"   Allow-Headers: {ALLOWED_HEADERS}")
+            
+            return response
     
     @app.after_request
     def add_cors_headers(response):
@@ -163,13 +173,15 @@ def create_app(config_name=None):
         
         if is_origin_allowed(origin):
             response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-API-Key, Accept, Origin'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        else:
+            response.headers['Access-Control-Allow-Origin'] = '*'
+        
+        response.headers['Access-Control-Allow-Methods'] = ALLOWED_METHODS
+        response.headers['Access-Control-Allow-Headers'] = ALLOWED_HEADERS
         
         return response
     
-    print(f"🌐 CORS: Manual handling configured for Vercel preview URLs")
+    print(f"🌐 CORS: Manual handling configured with explicit Authorization support")
     
     # Enregistrement des blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
