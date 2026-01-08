@@ -59,7 +59,8 @@ def verify_jwt_token(token: str) -> dict:
 
 def get_token_from_header() -> str:
     """
-    Extract JWT token from headers with full debug logging
+    Extract JWT token from multiple sources (query param, headers)
+    Query param is checked first as fallback for CORS header blocking
     
     Returns:
         str: Token string or None
@@ -71,13 +72,20 @@ def get_token_from_header() -> str:
     
     # Print ALL headers received
     all_headers = dict(request.headers)
-    print(f"[JWT DEBUG] All headers received ({len(all_headers)}):")
+    print(f"[JWT DEBUG] All headers received ({len(all_headers)}):") 
     for key, value in all_headers.items():
         # Truncate long values for readability
         display_value = value[:50] + '...' if len(str(value)) > 50 else value
         print(f"   - {key}: {display_value}")
     
-    # Try Authorization header (STANDARD)
+    # Try query parameter FIRST (bypasses CORS header blocking)
+    token_param = request.args.get('_token', '')
+    if token_param:
+        print(f"[JWT DEBUG] ✅ Token from query param, length: {len(token_param)}")
+        print(f"{'='*60}\n")
+        return token_param
+    
+    # Try Authorization header (STANDARD - but may be blocked by CORS)
     auth_header = request.headers.get('Authorization', '')
     if auth_header:
         print(f"[JWT DEBUG] ✅ Authorization header FOUND: {auth_header[:30]}...")
@@ -100,7 +108,7 @@ def get_token_from_header() -> str:
         print(f"{'='*60}\n")
         return api_key
     
-    print(f"[JWT DEBUG] ❌ No valid token found in any header")
+    print(f"[JWT DEBUG] ❌ No valid token found in query param or headers")
     print(f"[JWT DEBUG] Available headers: {list(all_headers.keys())}")
     print(f"{'='*60}\n")
     return None
