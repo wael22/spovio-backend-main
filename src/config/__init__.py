@@ -139,9 +139,17 @@ class ProductionConfig(Config):
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Strict'
-    # CORS_ORIGINS avec fallback pour éviter split sur string vide
+    # CORS_ORIGINS with Vercel support
     cors_env = os.environ.get('CORS_ORIGINS', '')
-    CORS_ORIGINS = [origin.strip() for origin in cors_env.split(',') if origin.strip()] if cors_env else []
+    if cors_env:
+        # Use environment variable if provided
+        CORS_ORIGINS = [origin.strip() for origin in cors_env.split(',') if origin.strip()]
+    else:
+        # Default: Allow Vercel production + all preview URLs
+        CORS_ORIGINS = [
+            'https://spovio-frontend.vercel.app',  # Production
+            '*',  # Allow all origins for now (Vercel previews have dynamic URLs)
+        ]
 
 class TestingConfig(Config):
     """Configuration de test."""
