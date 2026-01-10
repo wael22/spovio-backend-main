@@ -162,6 +162,7 @@ export const adminService = {
   updateCourt: (courtId, courtData) => api.put(`/admin/courts/${courtId}`, courtData),
   deleteCourt: (courtId) => api.delete(`/admin/courts/${courtId}`),
   getAllVideos: () => api.get('/admin/videos'),
+  deleteVideo: (videoId, mode = 'local_and_cloud') => api.delete(`/admin/videos/${videoId}`, { data: { mode } }),
   addCredits: (userId, credits) => api.post(`/admin/users/${userId}/credits`, { credits }),
   addCreditsToClub: (clubId, credits) => api.post(`/admin/clubs/${clubId}/credits`, { credits }),
   getAllClubsHistory: () => api.get('/admin/clubs/history/all'),
