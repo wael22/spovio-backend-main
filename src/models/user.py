@@ -199,6 +199,14 @@ class Video(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     cdn_migrated_at = db.Column(db.DateTime, nullable=True)  # Date de migration vers Bunny Stream
     bunny_video_id = db.Column(db.String(100), nullable=True)  # ID vidéo Bunny Stream (GUID)
+    deleted_at = db.Column(db.DateTime, nullable=True)  # Soft delete: date de suppression
+    deletion_mode = db.Column(db.String(20), nullable=True)  # Mode de suppression: 'database', 'cloud', 'both', 'local_only', 'cloud_only', 'local_and_cloud'
+    
+    # Tracking fichiers locaux et cloud
+    local_file_path = db.Column(db.String(500), nullable=True)  # Chemin du fichier local sur le serveur
+    local_file_deleted_at = db.Column(db.DateTime, nullable=True)  # Date de suppression du fichier local
+    cloud_deleted_at = db.Column(db.DateTime, nullable=True)  # Date de suppression du cloud (Bunny CDN)
+    
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     court_id = db.Column(db.Integer, db.ForeignKey('court.id'), nullable=True)
     
@@ -216,7 +224,20 @@ class Video(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "cdn_migrated_at": self.cdn_migrated_at.isoformat() if self.cdn_migrated_at else None,
             "bunny_video_id": self.bunny_video_id,
-            "club_id": self.court.club_id if self.court else None
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
+            "is_deleted": self.deleted_at is not None,
+            "deletion_mode": self.deletion_mode,
+            "club_id": self.court.club_id if self.court else None,
+            
+            # État des fichiers locaux et cloud
+            "local_file_path": self.local_file_path,
+            "has_local_file": self.local_file_path is not None and self.local_file_deleted_at is None,
+            "has_cloud_file": self.bunny_video_id is not None and self.cloud_deleted_at is None,
+            "local_file_deleted_at": self.local_file_deleted_at.isoformat() if self.local_file_deleted_at else None,
+            "cloud_deleted_at": self.cloud_deleted_at.isoformat() if self.cloud_deleted_at else None,
+            
+            # Simplicité pour frontend
+            "is_watchable": self.bunny_video_id is not None and self.cloud_deleted_at is None,
         }
 
 class HighlightVideo(db.Model):
