@@ -118,10 +118,18 @@ class ProxyManager:
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
             
-            # Vérifier la santé
+            # Vérifier la santé (OBLIGATOIRE)
             local_url = f"http://127.0.0.1:{port}/stream.mjpg"
-            if not self._wait_for_proxy_ready(port, timeout=10):
-                logger.warning("⚠️ Proxy démarré mais health check échoué")
+            if not self._wait_for_proxy_ready(port, timeout=15):
+                # CRITICAL: Ne pas continuer si le proxy n'est pas prêt
+                logger.error("❌ Proxy démarré mais le flux vidéo n'est pas disponible - arrêt du proxy")
+                try:
+                    process.terminate()
+                    process.wait(timeout=3)
+                except:
+                    process.kill()
+                VideoConfig.free_port(port)
+                raise RuntimeError(f"Proxy sur port {port}: flux vidéo non disponible après 15 secondes")
             
             self.active_proxies[port] = process
             
@@ -192,31 +200,40 @@ class ProxyManager:
         except:
             return False
     
-    def _wait_for_proxy_ready(self, port: int, timeout: int = 10) -> bool:
+    def _wait_for_proxy_ready(self, port: int, timeout: int = 15) -> bool:
         """
-        Attendre que le proxy soit prêt
+        Attendre que le proxy soit prêt ET qu'il ait du contenu vidéo
         
         Args:
             port: Port du proxy
             timeout: Timeout en secondes
             
         Returns:
-            True si le proxy répond
+            True si le proxy a du contenu vidéo
         """
         start_time = time.time()
+        last_status = None
         
         while time.time() - start_time < timeout:
             try:
                 response = requests.get(f"http://127.0.0.1:{port}/health", timeout=1)
                 if response.status_code == 200:
-                    logger.info(f"✅ Proxy prêt (port {port})")
-                    return True
-            except:
+                    data = response.json()
+                    last_status = data.get("status")
+                    
+                    # Vérifier que le proxy a vraiment du contenu vidéo
+                    if data.get("has_video", False):
+                        logger.info(f"✅ Proxy prêt avec contenu vidéo (port {port})")
+                        return True
+                    else:
+                        logger.debug(f"⏳ Proxy démarré mais pas encore de vidéo (status={last_status})")
+            except Exception as e:
+                logger.debug(f"⏳ Attente proxy (port {port}): {e}")
                 pass
             
             time.sleep(0.5)
         
-        logger.warning(f"⚠️ Timeout waiting for proxy (port {port})")
+        logger.error(f"❌ Timeout waiting for proxy video content (port {port}, last_status={last_status})")
         return False
     
     def cleanup_all(self):

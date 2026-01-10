@@ -173,7 +173,16 @@ def build_app(proxy: VideoProxy, fps: int) -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "fps": fps}
+        # Vérifier si on a reçu au moins une frame réelle
+        _, shape = proxy.get_latest_raw()
+        has_real_frame = shape is not None and shape != (480, 640)  # Pas juste le placeholder noir
+        
+        return {
+            "status": "ok" if has_real_frame else "starting",
+            "fps": fps,
+            "has_video": has_real_frame,
+            "shape": shape
+        }
 
     return app
 
