@@ -54,38 +54,20 @@ def my_videos():
     
     # Ajouter les vidéos possédées
     for v in owned_videos:
-        videos_list.append({
-            'id': v.id,
-            'title': v.title,
-            'description': v.description,
-            'file_url': v.file_url,
-            'thumbnail_url': v.thumbnail_url,
-            'duration': v.duration,
-            'recorded_at': v.recorded_at.isoformat() if v.recorded_at else None,
-            'is_unlocked': v.is_unlocked,
-            'is_shared': False,  # C'est ma vidéo
-            'bunny_video_id': v.bunny_video_id
-        })
+        video_data = v.to_dict()  # ✅ Utiliser to_dict() pour avoir tous les champs
+        video_data['is_shared'] = False  # Ajouter le champ is_shared
+        videos_list.append(video_data)
     
     # Ajouter les vidéos partagées
     for sv in shared_with_me:
         if sv.video:  # Vérifier que la vidéo existe toujours
-            videos_list.append({
-                'id': sv.video.id,
-                'title': sv.video.title,
-                'description': sv.video.description,
-                'file_url': sv.video.file_url,
-                'thumbnail_url': sv.video.thumbnail_url,
-                'duration': sv.video.duration,
-                'recorded_at': sv.video.recorded_at.isoformat() if sv.video.recorded_at else None,
-                'is_unlocked': sv.video.is_unlocked,
-                'is_shared': True,  # C'est une vidéo partagée
-                'shared_by': sv.owner.name if sv.owner else 'Inconnu',
-                'shared_at': sv.shared_at.isoformat() if sv.shared_at else None,
-                'shared_message': sv.message,
-                'shared_video_id': sv.id,  # Pour pouvoir supprimer le partage
-                'bunny_video_id': sv.video.bunny_video_id
-            })
+            video_data = sv.video.to_dict()  # ✅ Utiliser to_dict() pour avoir tous les champs
+            video_data['is_shared'] = True  # C'est une vidéo partagée
+            video_data['shared_by'] = sv.owner.name if sv.owner else 'Inconnu'
+            video_data['shared_at'] = sv.shared_at.isoformat() if sv.shared_at else None
+            video_data['shared_message'] = sv.message
+            video_data['shared_video_id'] = sv.id  # Pour pouvoir supprimer le partage
+            videos_list.append(video_data)
     
     return api_response({'videos': videos_list})
 

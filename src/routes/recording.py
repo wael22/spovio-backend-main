@@ -321,7 +321,8 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
             description=recording_session.description,
             duration=final_duration,  # ✅ DURÉE RÉELLE du fichier vidéo
             file_url=f'/videos/rec_{recording_session.recording_id}.mp4',
-            is_unlocked=True
+            is_unlocked=True,
+            processing_status='pending'  # 🆕 Statut initial avant upload
         )
         
         # 📦 Calculer la taille du fichier si disponible
@@ -379,6 +380,10 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
                 from src.services.bunny_storage_service import bunny_storage_service
                 logger.info(f"🚀 Début upload vers Bunny CDN: {local_video_path}")
                 
+                # 🆕 Mettre à jour le statut avant l'upload
+                video.processing_status = 'uploading'
+                db.session.commit()
+                
                 upload_id = bunny_storage_service.queue_upload(
                     local_path=local_video_path,
                     title=video.title,
@@ -402,6 +407,12 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
                     video.bunny_video_id = bunny_id
                     # ✅ CORRECTION: Mettre à jour file_url avec l'URL Bunny CDN complète
                     video.file_url = f"https://vz-f6fd0c7d-d70.b-cdn.net/{bunny_id}/playlist.m3u8"
+                    # 🆕 Mettre à jour le statut selon le statut Bunny
+                    bunny_status = upload_status.get('status', 'pending')
+                    if bunny_status == 'completed':
+                        video.processing_status = 'ready'
+                    else:
+                        video.processing_status = 'processing'
                     db.session.commit()
                     logger.info(f"✅ Bunny video ID saved: {video.bunny_video_id}")
                     logger.info(f"✅ Bunny URL updated: {video.file_url}")

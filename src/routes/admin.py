@@ -106,7 +106,14 @@ def log_club_action(user_id, club_id, action_type, details=None, performed_by_id
 def get_all_users():
     if not require_super_admin(): return jsonify({"error": "Accès non autorisé"}), 403
     users = User.query.all()
-    return jsonify({"users": [user.to_dict() for user in users]}), 200
+    users_data = []
+    for user in users:
+        user_dict = user.to_dict()
+        # Compter les vidéos de cet utilisateur
+        video_count = Video.query.filter_by(user_id=user.id).count()
+        user_dict['video_count'] = video_count
+        users_data.append(user_dict)
+    return jsonify({"users": users_data}), 200
 
 @admin_bp.route("/users", methods=["POST"])
 def create_user():
@@ -318,7 +325,14 @@ def add_credits_to_club(club_id):
 def get_all_clubs():
     if not require_super_admin(): return jsonify({"error": "Accès non autorisé"}), 403
     clubs = Club.query.all()
-    return jsonify({"clubs": [club.to_dict() for club in clubs]}), 200
+    clubs_data = []
+    for club in clubs:
+        club_dict = club.to_dict()
+        # Compter les vidéos de tous les courts de ce club
+        video_count = db.session.query(Video).join(Court).filter(Court.club_id == club.id).count()
+        club_dict['video_count'] = video_count
+        clubs_data.append(club_dict)
+    return jsonify({"clubs": clubs_data}), 200
 
 @admin_bp.route("/clubs", methods=["POST"])
 def create_club():
@@ -782,6 +796,7 @@ def admin_stop_recording(recording_id):
             court_id=court.id,
             recorded_at=active_recording.start_time,
             file_url=video_file_url,
+            local_file_path=video_file_url,  # ✅ AJOUTÉ: Sauvegarder le chemin local du fichier
             is_unlocked=True,
             credits_cost=0
         )
@@ -925,26 +940,13 @@ def get_all_clubs_videos():
         return jsonify({"error": "Accès non autorisé"}), 403
     
     try:
-        # Requête simplifiée sans les colonnes problématiques
-        videos = db.session.query(Video).all()
+        # Requête simplifiée sans les colonnes problématiques - TRIÉE PAR DATE DÉCROISSANTE
+        videos = db.session.query(Video).order_by(Video.created_at.desc()).all()
 
         videos_data = []
         for video in videos:
-            video_dict = {
-                "id": video.id,
-                "title": video.title,
-                "description": video.description,
-                "file_url": video.file_url,
-                "thumbnail_url": video.thumbnail_url,
-                "duration": getattr(video, 'duration', None),
-                "file_size": getattr(video, 'file_size', None),
-                "is_unlocked": getattr(video, 'is_unlocked', True),
-                "credits_cost": getattr(video, 'credits_cost', 1),
-                "recorded_at": video.recorded_at.isoformat() if video.recorded_at else None,
-                "created_at": video.created_at.isoformat() if video.created_at else None,
-                "user_id": video.user_id,
-                "court_id": video.court_id
-            }
+            # 🆕 Utiliser to_dict() pour avoir tous les champs (has_local_file, has_cloud_file, etc.)
+            video_dict = video.to_dict()
             
             # Ajouter les informations relationnelles
             if hasattr(video, 'owner') and video.owner:
@@ -2599,3 +2601,321 @@ def delete_club_overlay(club_id, overlay_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Erreur lors de la suppression"}), 500
+
+
+# --- VIDEO DELETION (SUPER ADMIN ONLY) ---
+
+@admin_bp.route("/videos/<int:video_id>", methods=["DELETE"])
+def delete_video(video_id):
+    """
+    Soft delete d'une vidéo avec choix de localisation de suppression.
+    Super admin uniquement.
+    
+    La vidéo reste dans la base de données avec deleted_at timestamp pour préserver les statistiques.
+    
+    Body JSON:
+    {
+        "mode": "local_only" |"cloud_only" | "local_and_cloud" | "database"
+    }
+    
+    Modes:
+    - local_only: Supprime fichier local uniquement (libère espace serveur)
+    - cloud_only: Supprime du cloud uniquement (expire la vidéo, garde stats)
+    - local_and_cloud: Supprime les deux (nettoyage complet, garde stats)
+    - database: Hard delete (supprime tout, stats perdues)
+    """
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+    
+    video = Video.query.get_or_404(video_id)
+    data = request.get_json() or {}
+    mode = data.get("mode", "local_and_cloud").lower()
+    
+    # Valider le mode
+    valid_modes = ["local_only", "cloud_only", "local_and_cloud", "database"]
+    if mode not in valid_modes:
+        return jsonify({
+            "error": f"Mode invalide. Options: {', '.join(valid_modes)}"
+        }), 400
+    
+    import os
+    from datetime import datetime
+    
+    try:
+        logger.info(f"🗑️ Suppression vidéo {video_id} ({video.title}) - Mode: {mode}")
+        
+        # MODE 1: Supprimer fichier LOCAL seulement
+        if mode == "local_only":
+            # Construire les chemins possibles pour le fichier
+            file_paths_to_check = []
+            
+            # Obtenir le club_id (les fichiers sont organisés par club, pas par court!)
+            club_id = video.court.club_id if video.court else None
+            
+            logger.info(f"🔍 DEBUG - Données vidéo:")
+            logger.info(f"   video.id: {video.id}")
+            logger.info(f"   video.title: {video.title}")
+            logger.info(f"   video.court_id: {video.court_id}")
+            logger.info(f"   club_id (via court): {club_id}")
+            logger.info(f"   video.local_file_path: {video.local_file_path}")
+            
+            # 1. Utiliser local_file_path si disponible
+            if video.local_file_path:
+                file_paths_to_check.append(video.local_file_path)
+                logger.info(f"   ✓ Ajouté local_file_path: {video.local_file_path}")
+            
+            # 2. Essayer de reconstruire le chemin
+            # Note: recording_session_id peut ne pas exister dans les anciennes versions du schéma
+            if club_id:
+                # Essayer d'obtenir recording_session_id si le champ existe
+                recording_session_id = getattr(video, 'recording_session_id', None)
+                logger.info(f"   recording_session_id: {recording_session_id}")
+                
+                if recording_session_id:
+                    # Format: static/videos/{club_id}/{recording_session_id}.mp4
+                    filename = f"{recording_session_id}.mp4"
+                    reconstructed_path = os.path.join("static", "videos", str(club_id), filename)
+                    file_paths_to_check.append(reconstructed_path)
+                    file_paths_to_check.append(os.path.abspath(reconstructed_path))
+                    logger.info(f"   ✓ Ajouté avec recording_session_id: {reconstructed_path}")
+                
+                # Fallback: Essayer avec le titre si disponible
+                if video.title:
+                    filename = f"{video.title}.mp4"
+                    reconstructed_path = os.path.join("static", "videos", str(club_id), filename)
+                    file_paths_to_check.append(reconstructed_path)
+                    file_paths_to_check.append(os.path.abspath(reconstructed_path))
+                    logger.info(f"   ✓ Ajouté avec titre: {reconstructed_path}")
+            
+            logger.info(f"🔍 Chemins à vérifier ({len(file_paths_to_check)}):")
+            for idx, path in enumerate(file_paths_to_check, 1):
+                exists = os.path.exists(path) if path else False
+                logger.info(f"   [{idx}] {'✅ EXISTE' if exists else '❌ N/A'}: {path}")
+            
+            # Essayer de supprimer tous les fichiers trouvés
+            deleted_files = []
+            errors = []
+            
+            for file_path in file_paths_to_check:
+                if file_path and os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        deleted_files.append(file_path)
+                        logger.info(f"✅ Fichier local supprimé: {file_path}")
+                    except Exception as e:
+                        errors.append(f"{file_path}: {str(e)}")
+                        logger.error(f"❌ Erreur suppression {file_path}: {e}")
+            
+            # Marquer en base si au moins un fichier supprimé
+            if deleted_files:
+                video.local_file_deleted_at = datetime.utcnow()
+                db.session.commit()
+                return jsonify({
+                    "message": f"Fichier(s) local(aux) supprimé(s): {len(deleted_files)}",
+                    "mode": "local_only",
+                    "video_id": video_id,
+                    "deleted_files": deleted_files,
+                    "errors": errors if errors else None
+                }), 200
+            elif errors:
+                return jsonify({
+                    "error": "Erreurs lors de la suppression",
+                    "video_id": video_id,
+                    "errors": errors
+                }), 500
+            else:
+                logger.warning(f"⚠️ Aucun fichier local trouvé pour vidéo {video_id}")
+                return jsonify({
+                    "message": "Aucun fichier local trouvé à supprimer",
+                    "video_id": video_id,
+                    "checked_paths": file_paths_to_check
+                }), 200
+        
+        # MODE 2: Supprimer CLOUD seulement (expiration)
+        elif mode == "cloud_only":
+            if video.bunny_video_id and not video.cloud_deleted_at:
+                try:
+                    from src.services.bunny_deletion_service import bunny_deletion_service
+                    success, error_msg = bunny_deletion_service.delete_video_from_bunny(video.bunny_video_id)
+                    
+                    if success:
+                        video.cloud_deleted_at = datetime.utcnow()
+                        video.deletion_mode = 'cloud_only'
+                        video.deleted_at = datetime.utcnow()  # Pour compatibilité interface
+                        db.session.commit()
+                        logger.info(f"✅ Vidéo cloud supprimée (expirée): {video.bunny_video_id}")
+                        return jsonify({
+                            "message": "Vidéo cloud supprimée (expirée, stats préservées)",
+                            "mode": "cloud_only",
+                            "video_id": video_id
+                        }), 200
+                    else:
+                        logger.error(f"❌ Échec suppression Bunny: {error_msg}")
+                        return jsonify({"error": f"Bunny CDN: {error_msg}"}), 500
+                        
+                except Exception as e:
+                    db.session.rollback()
+                    logger.error(f"❌ Exception suppression cloud: {e}")
+                    return jsonify({"error": f"Erreur suppression cloud: {str(e)}"}), 500
+            else:
+                msg = "Vidéo cloud déjà supprimée" if video.cloud_deleted_at else "Aucune vidéo cloud à supprimer"
+                return jsonify({"message": msg, "video_id": video_id}), 200
+        
+        # MODE 3: Supprimer LOCAL + CLOUD (nettoyage complet, stats préservées)
+        elif mode == "local_and_cloud":
+            errors = []
+            local_deleted = False
+            cloud_deleted = False
+            deleted_files = []
+            
+            # Construire les chemins possibles pour le fichier local
+            file_paths_to_check = []
+            
+            # Obtenir le club_id (les fichiers sont organisés par club, pas par court!)
+            club_id = video.court.club_id if video.court else None
+            
+            # 1. Utiliser local_file_path si disponible
+            if video.local_file_path:
+                file_paths_to_check.append(video.local_file_path)
+            
+            # 2. Essayer de reconstruire le chemin
+            if club_id:
+                # Essayer d'obtenir recording_session_id si le champ existe
+                recording_session_id = getattr(video, 'recording_session_id', None)
+                
+                if recording_session_id:
+                    filename = f"{recording_session_id}.mp4"
+                    reconstructed_path = os.path.join("static", "videos", str(club_id), filename)
+                    file_paths_to_check.append(reconstructed_path)
+                    file_paths_to_check.append(os.path.abspath(reconstructed_path))
+                
+                # Fallback: Essayer avec le titre si disponible
+                if video.title:
+                    filename = f"{video.title}.mp4"
+                    reconstructed_path = os.path.join("static", "videos", str(club_id), filename)
+                    file_paths_to_check.append(reconstructed_path)
+                    file_paths_to_check.append(os.path.abspath(reconstructed_path))
+            
+            # Supprimer local (tous les fichiers trouvés)
+            if not video.local_file_deleted_at:
+                for file_path in file_paths_to_check:
+                    if file_path and os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                            deleted_files.append(file_path)
+                            local_deleted = True
+                            logger.info(f"✅ Fichier local supprimé: {file_path}")
+                        except Exception as e:
+                            errors.append(f"Local ({file_path}): {str(e)}")
+                            logger.error(f"❌ Erreur suppression locale {file_path}: {e}")
+                
+                if local_deleted:
+                    video.local_file_deleted_at = datetime.utcnow()
+
+            
+            # Supprimer cloud
+            if video.bunny_video_id and not video.cloud_deleted_at:
+                try:
+                    from src.services.bunny_deletion_service import bunny_deletion_service
+                    success, error_msg = bunny_deletion_service.delete_video_from_bunny(video.bunny_video_id)
+                    
+                    if success:
+                        video.cloud_deleted_at = datetime.utcnow()
+                        cloud_deleted = True
+                        logger.info(f"✅ Vidéo cloud supprimée: {video.bunny_video_id}")
+                    else:
+                        errors.append(f"Cloud: {error_msg}")
+                        logger.error(f"❌ Échec suppression cloud: {error_msg}")
+                except Exception as e:
+                    errors.append(f"Cloud: {str(e)}")
+                    logger.error(f"❌ Exception suppression cloud: {e}")
+            
+            # Marquer en base
+            video.deletion_mode = 'local_and_cloud'
+            video.deleted_at = datetime.utcnow()
+            db.session.commit()
+            
+            result_parts = []
+            if local_deleted:
+                result_parts.append(f"{len(deleted_files)} fichier(s) local(aux)")
+            if cloud_deleted:
+                result_parts.append("vidéo cloud")
+            
+            message = f"Supprimé: {' et '.join(result_parts)}" if result_parts else "Aucun fichier à supprimer"
+            if errors:
+                message += f" (erreurs: {', '.join(errors)})"
+            
+            return jsonify({
+                "message": message,
+                "mode": "local_and_cloud",
+                "video_id": video_id,
+                "local_deleted": local_deleted,
+                "cloud_deleted": cloud_deleted,
+                "deleted_files": deleted_files if deleted_files else None,
+                "errors": errors if errors else None
+            }), 200 if not errors else 207
+
+        
+        # MODE 4: Supprimer DATABASE (hard delete - TOUT disparaît)
+        elif mode == "database":
+            try:
+                db.session.delete(video)
+                db.session.commit()
+                logger.info(f"✅ Vidéo {video_id} supprimée définitivement de la BDD")
+                return jsonify({
+                    "message": "Vidéo supprimée définitivement (stats perdues)",
+                    "mode": "database",
+                    "video_id": video_id
+                }), 200
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"❌ Erreur hard delete: {e}")
+                return jsonify({"error": f"Erreur suppression BDD: {str(e)}"}), 500
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Erreur inattendue suppression vidéo {video_id}: {e}")
+        return jsonify({"error": f"Erreur: {str(e)}"}), 500
+
+
+
+# --- VIDEO LISTING (SUPER ADMIN ONLY) ---
+
+@admin_bp.route("/videos", methods=["GET"])
+def get_all_videos():
+    """
+    Récupère toutes les vidéos (y compris supprimées) avec infos complètes.
+    Super admin uniquement.
+    """
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+    
+    try:
+        # Récupérer TOUTES les vidéos (y compris soft deleted)
+        videos = Video.query.all()
+        
+        videos_data = []
+        for video in videos:
+            video_dict = video.to_dict()
+            
+            # Ajouter les informations de propriétaire et club
+            if video.owner:
+                video_dict['player_name'] = video.owner.name
+                video_dict['player_email'] = video.owner.email
+            
+            if video.court and video.court.club:
+                video_dict['club_name'] = video.court.club.name
+                video_dict['court_name'] = video.court.name
+            
+            videos_data.append(video_dict)
+        
+        return jsonify({
+            "videos": videos_data,
+            "total": len(videos_data),
+            "deleted": len([v for v in videos_data if v.get('is_deleted')])
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la récupération des vidéos: {e}")
+        return jsonify({"error": f"Erreur: {str(e)}"}), 500
+

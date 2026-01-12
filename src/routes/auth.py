@@ -136,6 +136,51 @@ def login():
         return jsonify({'error': 'Erreur lors de la connexion'}), 500
 
 
+@auth_bp.route('/super-admin-login', methods=['POST'])
+def super_admin_login():
+    """Endpoint dédié pour la connexion des super administrateurs"""
+    try:
+        data = request.get_json()
+        if not data or not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Email et mot de passe requis'}), 400
+        email = data['email'].lower().strip()
+        password = data['password']
+        user = User.query.filter_by(email=email).first()
+        
+        # Vérifier que c'est bien un super admin
+        if not user or user.role != UserRole.SUPER_ADMIN:
+            return jsonify({'error': 'Accès réservé aux super administrateurs'}), 403
+        
+        if not user.password_hash or not check_password_hash(user.password_hash, password):
+            return jsonify({'error': 'Email ou mot de passe incorrect'}), 401
+        
+        # Vérifier si 2FA est activé pour ce super admin
+        # Pour l'instant, on skip le 2FA (à implémenter plus tard)
+        requires_2fa = False  # TODO: Implémenter la vérification 2FA
+        
+        # Générer JWT token
+        jwt_token = generate_jwt_token(user.id, user.role.value)
+        
+        # Créer la session
+        session.permanent = True
+        session['user_id'] = user.id
+        session['user_role'] = user.role.value
+        
+        logger.info(f"✅ Super Admin login réussi: {email} - Token JWT généré")
+        
+        response = make_response(jsonify({
+            'message': 'Connexion super admin réussie',
+            'user': user.to_dict(),
+            'token': jwt_token,
+            'requires_2fa': requires_2fa
+        }), 200)
+        return response
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': 'Erreur lors de la connexion super admin'}), 500
+
+
+
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
     """Déconnexion avec nettoyage des enregistrements actifs"""

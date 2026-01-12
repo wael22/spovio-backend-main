@@ -158,6 +158,7 @@ def create_app(config_name=None):
             response.headers['Access-Control-Allow-Methods'] = ALLOWED_METHODS
             # CRITICAL: Must explicitly include Authorization!
             response.headers['Access-Control-Allow-Headers'] = ALLOWED_HEADERS
+            response.headers['Access-Control-Allow-Credentials'] = 'true'  # Required for session-based auth!
             response.headers['Access-Control-Max-Age'] = '86400'
             
             print(f"✅ CORS Preflight Response for {origin}:")
@@ -178,6 +179,7 @@ def create_app(config_name=None):
         
         response.headers['Access-Control-Allow-Methods'] = ALLOWED_METHODS
         response.headers['Access-Control-Allow-Headers'] = ALLOWED_HEADERS
+        response.headers['Access-Control-Allow-Credentials'] = 'true'  # Required for session-based auth!
         
         return response
     
@@ -448,3 +450,18 @@ def _init_recording_scheduler(app):
     # Démarrer le thread en mode daemon
     thread = threading.Thread(target=run_scheduler, daemon=True, name="RecordingCleanupScheduler")
     thread.start()
+    
+    # 🆕 Démarrer le service de mise à jour du statut Bunny CDN
+    try:
+        from src.services.bunny_status_updater import BunnyStatusUpdater
+        import os
+        
+        api_key = os.environ.get('BUNNY_API_KEY', '1e962f55-b5f8-49e4-a11ee33c4216-2035-4b81')
+        library_id = os.environ.get('BUNNY_LIBRARY_ID', '573234')
+        
+        bunny_updater = BunnyStatusUpdater(api_key, library_id, app)
+        bunny_updater.start()
+        print("✅ Service de mise à jour Bunny CDN démarré")
+    except Exception as e:
+        print(f"⚠️  Erreur démarrage service Bunny: {e}")
+

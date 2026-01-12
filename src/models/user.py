@@ -199,6 +199,7 @@ class Video(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     cdn_migrated_at = db.Column(db.DateTime, nullable=True)  # Date de migration vers Bunny Stream
     bunny_video_id = db.Column(db.String(100), nullable=True)  # ID vidéo Bunny Stream (GUID)
+    processing_status = db.Column(db.String(20), default='pending', nullable=True)  # Statut Bunny: 'pending', 'uploading', 'processing', 'ready', 'failed'
     deleted_at = db.Column(db.DateTime, nullable=True)  # Soft delete: date de suppression
     deletion_mode = db.Column(db.String(20), nullable=True)  # Mode de suppression: 'database', 'cloud', 'both', 'local_only', 'cloud_only', 'local_and_cloud'
     
@@ -215,6 +216,25 @@ class Video(db.Model):
     # court = défini via backref='court' dans Court.videos
 
     def to_dict(self):
+        # Calculer le statut de suppression
+        deletion_status = "active"  # Par défaut
+        if self.local_file_deleted_at and self.cloud_deleted_at:
+            deletion_status = "deleted_both"  # Supprimé local + cloud
+        elif self.local_file_deleted_at:
+            deletion_status = "deleted_local"  # Supprimé local uniquement
+        elif self.cloud_deleted_at:
+            deletion_status = "deleted_cloud"  # Supprimé cloud uniquement
+        elif self.deleted_at:
+            deletion_status = "deleted_db"  # Supprimé en base (ne devrait pas arriver)
+        
+        # ✅ NOUVEAU: Une vidéo est expirée si le cloud est supprimé ou inexistant
+        # (important pour les joueurs qui ne peuvent plus regarder la vidéo)
+        is_expired = (
+            deletion_status in ["deleted_cloud", "deleted_both"] or
+            (self.bunny_video_id is None and self.local_file_path is None) or
+            self.cloud_deleted_at is not None
+        )
+        
         return {
             "id": self.id, "user_id": self.user_id, "court_id": self.court_id,
             "file_url": self.file_url, "thumbnail_url": self.thumbnail_url,
@@ -224,9 +244,12 @@ class Video(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "cdn_migrated_at": self.cdn_migrated_at.isoformat() if self.cdn_migrated_at else None,
             "bunny_video_id": self.bunny_video_id,
+            "processing_status": self.processing_status,  # 'pending', 'uploading', 'processing', 'ready', 'failed'
             "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "is_deleted": self.deleted_at is not None,
             "deletion_mode": self.deletion_mode,
+            "deletion_status": deletion_status,  # ✅ Indicateur clair de l'état de suppression
+            "is_expired": is_expired,  # ✅ NOUVEAU: Vidéo expirée (cloud supprimé/inexistant)
             "club_id": self.court.club_id if self.court else None,
             
             # État des fichiers locaux et cloud
@@ -236,8 +259,9 @@ class Video(db.Model):
             "local_file_deleted_at": self.local_file_deleted_at.isoformat() if self.local_file_deleted_at else None,
             "cloud_deleted_at": self.cloud_deleted_at.isoformat() if self.cloud_deleted_at else None,
             
-            # Simplicité pour frontend
-            "is_watchable": self.bunny_video_id is not None and self.cloud_deleted_at is None,
+            # Simplicité pour frontend - une vidéo est visible si elle est prête ET pas supprimée du cloud
+            "is_watchable": self.bunny_video_id is not None and self.cloud_deleted_at is None and self.processing_status == 'ready',
+            "is_processing": self.processing_status in ['uploading', 'processing'],
         }
 
 class HighlightVideo(db.Model):
