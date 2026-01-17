@@ -12,9 +12,9 @@ class BunnyConfig:
     
     # Configuration par défaut (sync avec bunny_storage_service.py L27-29)
     DEFAULT_CONFIG = {
-        'api_key': '1e962f55-b5f8-49e4-a11ee33c4216-2035-4b81',  # Updated from admin panel - CORRECTED
-        'library_id': '573234',  # Updated from admin panel
-        'cdn_hostname': 'vz-f6fd0c7d-d70.b-cdn.net',  # Updated from admin panel  
+        'api_key': '4771e914-172d-4abf-aac6e0518b34-44f2-48cd',  # Updated 2026-01-13
+        'library_id': '579861',  # Updated 2026-01-13
+        'cdn_hostname': 'vz-cc4565cd-4e9.b-cdn.net',  # Updated 2026-01-14
         'storage_zone': 'padel-videos',
         'timeout': 300,  # 5 minutes
         'max_retries': 3,

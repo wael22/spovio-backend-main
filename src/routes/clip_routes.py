@@ -165,14 +165,25 @@ def upload_direct_clip(current_user):
         temp_path = os.path.join(temp_dir, f"clip_upload_{datetime.now().timestamp()}.mp4")
         file.save(temp_path)
         
-        # Upload vers Bunny via le service existant
-        clip_url, bunny_video_id = manual_clip_service._upload_to_bunny(
-            temp_path,
-            f"clip_{clip.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-        )
+        filename = f"clip_{clip.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
         
-        # Mettre à jour le clip
-        clip.file_url = clip_url
+        # Upload vers Bunny Stream (pour streaming)
+        clip_url, bunny_video_id = manual_clip_service._upload_to_bunny(temp_path, filename)
+        logger.info(f"✅ Uploaded to Bunny Stream: {clip_url}")
+        
+        # 🆕 Upload vers Bunny Storage (pour téléchargement MP4)
+        storage_url = None
+        try:
+            from src.services.bunny_storage_uploader import upload_clip_to_storage
+            storage_url = upload_clip_to_storage(temp_path, filename)
+            logger.info(f"✅ Uploaded to Bunny Storage: {storage_url}")
+        except Exception as e:
+            logger.error(f"⚠️ Failed to upload to Bunny Storage: {e}")
+            # Clip will still work for streaming
+        
+        # Mettre à jour le clip avec les 2 URLs
+        clip.file_url = clip_url  # Bunny Stream (HLS)
+        clip.storage_download_url = storage_url  # Bunny Storage (MP4)
         clip.bunny_video_id = bunny_video_id
         clip.status = 'completed'
         clip.completed_at = datetime.utcnow()
@@ -194,7 +205,7 @@ def upload_direct_clip(current_user):
         except:
             pass
         
-        logger.info(f"Clip {clip.id} uploaded successfully")
+        logger.info(f"✅ Clip {clip.id} uploaded successfully")
         
         return jsonify({
             'success': True,
@@ -332,10 +343,71 @@ def get_share_links(current_user, clip_id):
         logger.error(f"Error generating share links: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
+
+@clip_bp.route('/<int:clip_id>/download', methods=['GET'])
+@login_required
+def download_clip(current_user, clip_id):
+    """
+    Télécharge un clip en MP4 depuis Bunny Storage
+    Streams le fichier directement via le backend (proxy)
+    """
+    try:
+        from flask import Response, stream_with_context
+        import requests as req
+        
+        clip = UserClip.query.get(clip_id)
+        
+        if not clip:
+            return jsonify({'error': 'Clip not found'}), 404
+        
+        if clip.user_id != current_user.id:
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Vérifier que le clip a une URL de téléchargement
+        if not clip.storage_download_url:
+            return jsonify({
+                'error': 'Clip not available for download',
+                'message': 'This clip is only available for streaming'
+            }), 404
+        
+        # Incrémenter le compteur de téléchargements
+        clip.download_count += 1
+        db.session.commit()
+        
+        logger.info(f"📥 Downloading clip {clip_id}: {clip.title}")
+        
+        # Stream depuis Bunny Storage
+        def generate():
+            with req.get(clip.storage_download_url, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+        
+        # Nom de fichier sécurisé
+        import re
+        safe_filename = re.sub(r'[^a-zA-Z0-9_-]', '_', clip.title)
+        filename = f"{safe_filename}.mp4"
+        
+        return Response(
+            stream_with_context(generate()),
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Content-Type': 'video/mp4'
+            }
+        )
+        
+    except req.exceptions.RequestException as e:
+        logger.error(f"Error downloading from Bunny Storage: {e}")
+        return jsonify({'error': 'Failed to download clip from storage'}), 502
+    except Exception as e:
+        logger.error(f"Error downloading clip: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 @clip_bp.route('/<int:clip_id>/download', methods=['POST'])
 @login_required
 def track_download(current_user, clip_id):
-    """Enregistre un téléchargement"""
+    """Enregistre un téléchargement (legacy endpoint for tracking)"""
     try:
         clip = UserClip.query.get(clip_id)
         
@@ -349,12 +421,13 @@ def track_download(current_user, clip_id):
         
         return jsonify({
             'success': True,
-            'download_url': clip.file_url
+            'download_url': clip.storage_download_url or clip.file_url  # Fallback to stream URL
         }), 200
         
     except Exception as e:
         logger.error(f"Error tracking download: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
 
 @clip_bp.route('/<int:clip_id>/meta', methods=['GET'])
 def get_clip_meta(clip_id):

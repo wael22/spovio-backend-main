@@ -598,16 +598,10 @@ def download_video(video_id):
     if video.user_id != user.id and not video.is_unlocked:
         return api_response(error="Accès non autorisé", status=403)
     
-    # Pour le MVP, rediriger vers le stream
-    filename = video.file_url.split('/')[-1]
-    return Response(
-        b'fake video data for download',
-        mimetype='video/mp4',
-        headers={
-            'Content-Disposition': f'attachment; filename="{video.title}.mp4"',
-            'Content-Type': 'application/octet-stream'
-        }
-    )
+    # Utiliser le proxy de téléchargement pour streamer depuis Bunny CDN
+    from ..services.video_download_proxy import download_video_proxy
+    return download_video_proxy(video_id, user, video, api_response)
+
 
 # ====================================================================
 # ROUTES POUR LES TERRAINS ET CLUBS
@@ -2010,16 +2004,10 @@ def download_video(video_id):
         if video.user_id != user.id and not video.is_unlocked:
             return jsonify({'error': 'Accès non autorisé'}), 403
         
-        # Pour le MVP, rediriger vers le stream
-        filename = video.file_url.split('/')[-1]
-        return Response(
-            b'fake video data for download',
-            mimetype='video/mp4',
-            headers={
-                'Content-Disposition': f'attachment; filename="{video.title}.mp4"',
-                'Content-Type': 'application/octet-stream'
-            }
-        )
+        # Utiliser le proxy de téléchargement pour streamer depuis Bunny CDN
+        from ..services.video_download_proxy import download_video_proxy
+        return download_video_proxy(video_id, user, video, lambda **kwargs: (jsonify(kwargs), kwargs.get('status', 200)))
     except Exception as e:
         logger.error(f"❌ Erreur lors du téléchargement de la vidéo: {e}")
         return jsonify({'error': 'Erreur lors du téléchargement'}), 500
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Module vidéos (nettoyé). Les endpoints start/stop internes sont dépréciés.
 Utiliser /api/recording/start et /api/recording/stop.
 """
@@ -130,6 +130,14 @@ def share_video(video_id):
     }
     return api_response({'share_urls': share, 'video_url': video_url}, 'Liens générés')
 
+@videos_bp.route('/<int:video_id>/download', methods=['GET'])
+@login_required
+def download_video(video_id):
+    """Télécharge une vidéo via proxy backend."""
+    from src.services.video_download_proxy import download_video_proxy
+    user = get_current_user()
+    video = Video.query.get_or_404(video_id)
+    return download_video_proxy(video_id, user, video, api_response) 
 
 @videos_bp.route('/<int:video_id>/watch', methods=['GET'])
 def watch_video(video_id):

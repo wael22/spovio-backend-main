@@ -123,8 +123,8 @@ def get_bunny_status_updater() -> BunnyStatusUpdater:
     
     if _bunny_status_updater is None:
         import os
-        api_key = os.environ.get('BUNNY_API_KEY', '1e962f55-b5f8-49e4-a11ee33c4216-2035-4b81')
-        library_id = os.environ.get('BUNNY_LIBRARY_ID', '573234')
+        api_key = os.environ.get('BUNNY_API_KEY', '4771e914-172d-4abf-aac6e0518b34-44f2-48cd')
+        library_id = os.environ.get('BUNNY_LIBRARY_ID', '579861')
         _bunny_status_updater = BunnyStatusUpdater(api_key, library_id)
     
     return _bunny_status_updater

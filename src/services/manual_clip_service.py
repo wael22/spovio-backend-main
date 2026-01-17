@@ -147,16 +147,25 @@ class ManualClipService:
             logger.info("Generating thumbnail")
             thumbnail_path = self._generate_thumbnail(clip_path)
             
-            # Upload vers Bunny
-            logger.info("Uploading clip to Bunny CDN")
-            clip_url, bunny_video_id = self._upload_to_bunny(
-                clip_path,
-                f"clip_{clip.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-            )
+            # Upload vers Bunny Stream (pour streaming)
+            logger.info("Uploading clip to Bunny Stream")
+            filename = f"clip_{clip.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+            clip_url, bunny_video_id = self._upload_to_bunny(clip_path, filename)
             
-            # Mettre à jour le clip
-            clip.file_url = clip_url
-            clip.thumbnail_url = thumbnail_path  # Ou None si upload thumbnail pas implémenté
+            # 🆕 Upload vers Bunny Storage (pour téléchargement MP4)
+            logger.info("Uploading clip to Bunny Storage for downloads")
+            try:
+                from src.services.bunny_storage_uploader import upload_clip_to_storage
+                storage_url = upload_clip_to_storage(clip_path, filename)
+                logger.info(f"✅ Uploaded to Storage: {storage_url}")
+            except Exception as e:
+                logger.error(f"⚠️ Failed to upload to Storage: {e}")
+                storage_url = None  # Clip will still work for streaming
+            
+            # Mettre à jour le clip avec les 2 URLs
+            clip.file_url = clip_url  # Bunny Stream (HLS)
+            clip.storage_download_url = storage_url  # Bunny Storage (MP4)
+            clip.thumbnail_url = thumbnail_path
             clip.bunny_video_id = bunny_video_id
             clip.status = 'completed'
             clip.completed_at = datetime.utcnow()
@@ -165,7 +174,7 @@ class ManualClipService:
             # Nettoyer fichiers temp
             self._cleanup_files([clip_path, thumbnail_path])
             
-            logger.info(f"Clip {clip_id} processed successfully (optimized streaming)")
+            logger.info(f"✅ Clip {clip_id} processed successfully - Stream: {clip_url} | Download: {storage_url}")
             return True
             
         except Exception as e:
@@ -451,18 +460,30 @@ class ManualClipService:
         if clip.user_id != user_id:
             raise ValueError("User does not own this clip")
         
-        # Supprimer de Bunny CDN si le fichier existe
+        # Supprimer de Bunny Stream si le fichier existe
         if clip.bunny_video_id:
             try:
                 self._delete_from_bunny(clip.bunny_video_id)
+                logger.info(f"🗑️ Deleted clip from Bunny Stream: {clip.bunny_video_id}")
             except Exception as e:
-                logger.warning(f"Could not delete from Bunny: {e}")
+                logger.warning(f"Could not delete from Bunny Stream: {e}")
+        
+        # 🆕 Supprimer de Bunny Storage si le fichier existe
+        if clip.storage_download_url:
+            try:
+                from src.services.bunny_storage_uploader import delete_clip_from_storage
+                # Extraire le nom du fichier depuis l'URL
+                filename = clip.storage_download_url.split('/')[-1]
+                delete_clip_from_storage(filename)
+                logger.info(f"🗑️ Deleted clip from Bunny Storage: {filename}")
+            except Exception as e:
+                logger.warning(f"Could not delete from Bunny Storage: {e}")
         
         # Supprimer de la base de données
         db.session.delete(clip)
         db.session.commit()
         
-        logger.info(f"Deleted clip {clip_id}")
+        logger.info(f"✅ Deleted clip {clip_id}")
         return True
     
     def _delete_from_bunny(self, video_id: str):

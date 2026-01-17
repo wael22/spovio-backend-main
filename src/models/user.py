@@ -365,6 +365,7 @@ class UserClip(db.Model):
     file_url = db.Column(db.String(500), nullable=True)        # URL du clip sur Bunny CDN
     thumbnail_url = db.Column(db.String(500), nullable=True)   # URL de la miniature
     bunny_video_id = db.Column(db.String(100), nullable=True)  # ID Bunny Stream
+    storage_download_url = db.Column(db.String(500), nullable=True)  # URL MP4 sur Bunny Storage pour téléchargement
     
     # Statut de traitement
     status = db.Column(db.String(50), default='pending')  # pending, processing, completed, failed
@@ -395,6 +396,8 @@ class UserClip(db.Model):
             "file_url": self.file_url,
             "thumbnail_url": self.thumbnail_url,
             "bunny_video_id": self.bunny_video_id,
+            "storage_download_url": self.storage_download_url,
+            "is_downloadable": self.storage_download_url is not None,
             "status": self.status,
             "error_message": self.error_message,
             "share_count": self.share_count,
