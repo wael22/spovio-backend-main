@@ -1,0 +1,13 @@
+# Railway/Nixpacks Configuration for Spovio Backend
+# This file tells Railway how to build and deploy the application
+
+[phases.setup]
+nixPkgs = ["python313", "postgresql"]
+
+[phases.install]
+cmds = [
+    "pip install -r requirements.txt"
+]
+
+[start]
+cmd = "gunicorn --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --access-logfile - --error-logfile - main:app"
