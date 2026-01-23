@@ -322,7 +322,8 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
             duration=final_duration,  # ✅ DURÉE RÉELLE du fichier vidéo
             file_url=f'/videos/rec_{recording_session.recording_id}.mp4',
             is_unlocked=True,
-            processing_status='pending'  # 🆕 Statut initial avant upload
+            processing_status='pending',  # 🆕 Statut initial avant upload
+            local_file_path=f"static/videos/{recording_session.club_id}/{recording_session.recording_id}.mp4" if os.path.exists(f"static/videos/{recording_session.club_id}/{recording_session.recording_id}.mp4") else (f"static/videos/{recording_session.recording_id}.mp4" if os.path.exists(f"static/videos/{recording_session.recording_id}.mp4") else None)
         )
         
         # 📦 Calculer la taille du fichier si disponible

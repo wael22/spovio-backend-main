@@ -87,6 +87,10 @@ class ManualClipService:
         
         if video.duration and end_time > video.duration:
             raise ValueError(f"End time exceeds video duration ({video.duration}s)")
+            
+        # Check specific max duration (1 min)
+        if (end_time - start_time) > 60:
+             raise ValueError("Clip duration cannot exceed 60 seconds")
         
         # Créer l'enregistrement du clip
         clip = UserClip(
