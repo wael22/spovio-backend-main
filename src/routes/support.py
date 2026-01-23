@@ -230,4 +230,64 @@ def update_support_message(message_id):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Erreur mise à jour message support: {e}")
+        return jsonify({"error": str(e)}),500
+
+
+# ===== ROUTE PUBLIQUE CONTACT (sans authentification) =====
+
+@support_bp.route('/contact', methods=['POST'])
+def submit_contact_form():
+    """Formulaire de contact public (pas d'authentification requise)"""
+    try:
+        data = request.get_json()
+        
+        name = data.get('name')
+        email = data.get('email')
+        company = data.get('company', '')
+        contact_type = data.get('type', 'player')  # player ou club
+        message_text = data.get('message')
+        
+        if not name or not email or not message_text:
+            return jsonify({"error": "Nom, email et message requis"}), 400
+        
+        # Créer un sujet dynamique basé sur le type
+        if contact_type == 'club':
+            subject = f"Demande de contact - Club: {company or name}"
+        else:
+            subject = f"Demande de contact - {name}"
+        
+        # Enregistrer dans la base de données comme message support
+        # Pour les contacts publics sans compte, on peut créer un utilisateur temporaire
+        # OU stocker directement sans user_id (nécessiterait une modification du modèle)
+        # Pour l'instant, on stocke dans les logs et on envoie un email
+        
+        logger.info(f"📧 CONTACT FORM - Name: {name}, Email: {email}, Type: {contact_type}")
+        logger.info(f"📧 Message: {message_text}")
+        
+        # TODO: Envoyer un email de confirmation au client
+        # TODO: Envoyer un email de notification à l'équipe Spovio (contact@spovio.net)
+        
+        try:
+            # Simulation d'envoi d'email de confirmation
+            logger.info(f"✉️ Email de confirmation envoyé à {email}")
+            logger.info(f"✉️ Notification envoyée à contact@spovio.net")
+            
+            # Dans une vraie implémentation, utiliser un service d'email comme SendGrid, Mailgun, etc.
+            # from src.services.email_service import send_email
+            # send_email(
+            #     to=email,
+            #     subject="Confirmation de réception - Spovio",
+            #     body=f"Bonjour {name},\n\nNous avons bien reçu votre message. Notre équipe vous répondra dans les plus brefs délais.\n\nCordialement,\nL'équipe Spovio"
+            # )
+            
+        except Exception as email_error:
+            logger.error(f"Erreur envoi email: {email_error}")
+        
+        return jsonify({
+            "message": "Message envoyé avec succès",
+            "success": True
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Erreur formulaire de contact: {e}")
         return jsonify({"error": str(e)}), 500

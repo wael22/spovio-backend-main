@@ -46,6 +46,7 @@ from .routes.video_sharing_routes import video_sharing_bp  # 🆕 Video sharing 
 from .routes.analytics_routes import analytics_bp  # 🆕 Analytics dashboard
 from .routes.system_settings_routes import system_settings_bp  # 🆕 System settings
 from .routes.clip_routes import clip_bp  # 🆕 Manual clip creation and social sharing
+from .routes.public_clip_routes import public_clip_bp  # 🆕 Public clip sharing (no auth required)
 from .routes.tutorial_routes import tutorial_bp  # 🆕 Tutorial system for new players
 
 def create_app(config_name=None):
@@ -216,6 +217,7 @@ def create_app(config_name=None):
     app.register_blueprint(video_sharing_bp, url_prefix='/api/videos')  # 🆕 Video sharing
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')  # 🆕 Analytics dashboard
     app.register_blueprint(clip_bp)  # 🆕 Manual clips (prefix in blueprint)
+    app.register_blueprint(public_clip_bp)  # 🆕 Public clip sharing (no auth, root level)
     app.register_blueprint(tutorial_bp, url_prefix='/api/tutorial')  # 🆕 Tutorial system
     app.register_blueprint(password_reset_bp)
     # Frontend blueprint en dernier pour éviter d'intercepter les routes API
@@ -456,12 +458,16 @@ def _init_recording_scheduler(app):
         from src.services.bunny_status_updater import BunnyStatusUpdater
         import os
         
-        api_key = os.environ.get('BUNNY_API_KEY', '4771e914-172d-4abf-aac6e0518b34-44f2-48cd')
-        library_id = os.environ.get('BUNNY_LIBRARY_ID', '579861')
+        # Charger depuis variables d'environnement uniquement
+        api_key = os.environ.get('BUNNY_API_KEY')
+        library_id = os.environ.get('BUNNY_LIBRARY_ID')
         
-        bunny_updater = BunnyStatusUpdater(api_key, library_id, app)
-        bunny_updater.start()
-        print("✅ Service de mise à jour Bunny CDN démarré")
+        if api_key and library_id:
+            bunny_updater = BunnyStatusUpdater(api_key, library_id, app)
+            bunny_updater.start()
+            print("✅ Service de mise à jour Bunny CDN démarré")
+        else:
+            print("⚠️ BUNNY_API_KEY ou BUNNY_LIBRARY_ID manquant - service Bunny non démarré")
     except Exception as e:
         print(f"⚠️  Erreur démarrage service Bunny: {e}")
 

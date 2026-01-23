@@ -376,9 +376,36 @@ def download_clip(current_user, clip_id):
         
         logger.info(f"📥 Downloading clip {clip_id}: {clip.title}")
         
-        # Stream depuis Bunny Storage
+        # Obtenir la clé d'accès Bunny Storage
+        import os
+        bunny_storage_password = os.environ.get('BUNNY_STORAGE_PASSWORD')
+        storage_zone = os.environ.get('BUNNY_STORAGE_ZONE', 'mysmash-2026')
+        
+        if not bunny_storage_password:
+            return jsonify({'error': 'Bunny Storage not configured'}), 500
+        
+        # Extraire le chemin du fichier depuis l'URL CDN
+        # URL CDN: https://mysmash-2026.b-cdn.net/clips/clip_33_20260123_094457.mp4
+        # Convertir en URL API: https://storage.bunnycdn.com/mysmash-2026/clips/clip_33_20260123_094457.mp4
+        cdn_url = clip.storage_download_url
+        # Extraire le chemin après le nom du storage zone
+        if f"{storage_zone}.b-cdn.net/" in cdn_url:
+            file_path = cdn_url.split(f"{storage_zone}.b-cdn.net/")[1]
+        else:
+            return jsonify({'error': 'Invalid storage URL'}), 500
+        
+        # Construire l'URL de l'API Storage
+        storage_api_url = f"https://storage.bunnycdn.com/{storage_zone}/{file_path}"
+        
+        logger.info(f"📥 Downloading from Storage API: {storage_api_url}")
+        
+        # Stream depuis Bunny Storage API avec authentification
         def generate():
-            with req.get(clip.storage_download_url, stream=True, timeout=60) as r:
+            headers = {
+                'AccessKey': bunny_storage_password
+            }
+            
+            with req.get(storage_api_url, headers=headers, stream=True, timeout=60) as r:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:

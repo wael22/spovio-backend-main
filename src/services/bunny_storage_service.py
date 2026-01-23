@@ -8,13 +8,15 @@ import logging
 import threading
 import time
 import json
+import socket
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List
-import requests
+import httpx
 from pathlib import Path
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import random
 
 # Configuration du logger
 logger = logging.getLogger(__name__)
@@ -24,9 +26,17 @@ class BunnyStorageConfig:
     """Configuration centralisée pour Bunny Storage"""
     
     def __init__(self):
-        self.api_key = os.environ.get('BUNNY_API_KEY', '4771e914-172d-4abf-aac6e0518b34-44f2-48cd')  # Updated 2026-01-13
-        self.library_id = os.environ.get('BUNNY_LIBRARY_ID', '579861')  # Updated 2026-01-13
-        self.cdn_hostname = os.environ.get('BUNNY_CDN_HOSTNAME', 'vz-cc4565cd-4e9.b-cdn.net')  # Updated 2026-01-14
+        # Charger depuis les variables d'environnement (OBLIGATOIRE - pas de fallback)
+        self.api_key = os.environ.get('BUNNY_API_KEY')
+        self.library_id = os.environ.get('BUNNY_LIBRARY_ID')
+        self.cdn_hostname = os.environ.get('BUNNY_CDN_HOSTNAME')
+        
+        # Validation - crash si manquant (sécurité production)
+        if not self.api_key or not self.library_id or not self.cdn_hostname:
+            raise ValueError(
+                "Configuration Bunny CDN manquante! "
+                "Vérifiez BUNNY_API_KEY, BUNNY_LIBRARY_ID, BUNNY_CDN_HOSTNAME dans .env"
+            )
         
         # URLs API
         self.api_base_url = f"https://video.bunnycdn.com/library/{self.library_id}"
@@ -38,11 +48,12 @@ class BunnyStorageConfig:
             "Accept": "application/json"
         }
         
-        # Configuration avancée
-        self.chunk_size = 8 * 1024 * 1024  # 8MB chunks pour upload
-        self.max_retries = 3
-        self.retry_delay = 5  # secondes
-        self.timeout = 3600  # 1 heure (augmente de 5 min pour supporter les fichiers de 2GB+)
+        # Configuration avancée avec variables d'environnement
+        self.chunk_size = 8 * 1024 * 1024  # 8MB chunks
+        self.max_retries = int(os.environ.get('BUNNY_MAX_RETRIES', '3'))
+        self.retry_delay = int(os.environ.get('BUNNY_RETRY_DELAY', '10'))
+        self.timeout = int(os.environ.get('BUNNY_UPLOAD_TIMEOUT', '7200'))
+        self.upload_timeout = int(os.environ.get('BUNNY_UPLOAD_TIMEOUT', '7200'))
         self.max_concurrent_uploads = 2
     
     def is_valid(self) -> bool:
@@ -143,6 +154,9 @@ class BunnyStorageService:
         self.is_running = True
         self._lock = threading.RLock()
         
+        # httpx Client pour uploads robustes et streaming
+        self.client = self._create_client()
+        
         # Statistiques
         self.stats = {
             'uploads_started': 0,
@@ -155,6 +169,23 @@ class BunnyStorageService:
         self._start_workers()
         
         logger.info(f"✅ Service Bunny Storage initialisé (Library: {self.config.library_id})")
+    
+    def _create_client(self) -> httpx.Client:
+        """Crée un client httpx avec configuration optimale pour uploads"""
+        # httpx.Client avec timeouts configurés et connection pooling
+        return httpx.Client(
+            timeout=httpx.Timeout(
+                connect=60.0,  # 60s pour établir connexion
+                read=7200.0,   # 2h pour lire la réponse
+                write=7200.0,  # 2h pour écrire les données (CRITIQUE pour uploads)
+                pool=10.0      # 10s pour obtenir connexion du pool
+            ),
+            limits=httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10
+            ),
+            http2=False  # HTTP/1.1 pour compatibilité Bunny
+        )
     
     def _start_workers(self):
         """Démarre les workers d'upload"""
@@ -197,8 +228,11 @@ class BunnyStorageService:
             try:
                 if task.retries > 0:
                     task.update_status(UploadStatus.RETRYING)
-                    delay = self.config.retry_delay * (2 ** task.retries)  # Backoff exponentiel
-                    logger.info(f"⏳ Retry {task.retries}/{self.config.max_retries} dans {delay}s: {task.title}")
+                    # Backoff exponentiel avec jitter pour éviter thundering herd
+                    base_delay = self.config.retry_delay * (2 ** (task.retries - 1))
+                    jitter = random.uniform(0, base_delay * 0.3)  # +/- 30% jitter
+                    delay = base_delay + jitter
+                    logger.info(f"⏳ Retry {task.retries}/{self.config.max_retries} dans {delay:.1f}s: {task.title}")
                     time.sleep(delay)
                 
                 task.update_status(UploadStatus.UPLOADING)
@@ -254,11 +288,10 @@ class BunnyStorageService:
             if not task.bunny_video_id:
                 logger.info(f"📝 {worker_name}: Création vidéo Bunny: {task.title}")
                 
-                create_response = requests.post(
+                create_response = self.client.post(
                     f"{self.config.api_base_url}/videos",
                     headers=self.config.headers,
-                    json={"title": task.title},
-                    timeout=30
+                    json={"title": task.title}
                 )
                 
                 if create_response.status_code not in [200, 201]:
@@ -279,9 +312,9 @@ class BunnyStorageService:
             else:
                 logger.info(f"♻️ {worker_name}: Réutilisation vidéo Bunny existante: {task.bunny_video_id}")
             
-            # 2. Upload du fichier SANS timeout strict (laisse Bunny gérer)
+            # 2. Upload du fichier avec timeout raisonnable et retry
             logger.info(f"📤 {worker_name}: Début upload fichier {task.local_path} ({task.total_bytes / (1024*1024):.2f} MB)")
-            logger.info(f"⏰ Upload sans timeout - attente de la fin de l'envoi...")
+            logger.info(f"⏰ Upload timeout: {self.config.upload_timeout}s ({self.config.upload_timeout/60:.1f} minutes)")
             
             upload_headers = {
                 "AccessKey": self.config.api_key,
@@ -291,14 +324,19 @@ class BunnyStorageService:
             upload_url = f"{self.config.api_base_url}/videos/{task.bunny_video_id}"
             
             try:
+                # Avec httpx: streaming upload plus fiable
+                # Au lieu de charger tout en mémoire, on stream directement le fichier
+                logger.info(f"📖 Upload streaming avec httpx: {task.local_path}")
+                
+                # httpx supporte streaming de fichiers nativement
                 with open(task.local_path, 'rb') as file:
-                    # Upload SANS timeout (None) - laisse le temps nécessaire
-                    upload_response = requests.put(
+                    upload_response = self.client.put(
                         upload_url,
                         headers=upload_headers,
-                        data=self._file_iterator(file, task),
-                        timeout=None  # Pas de timeout - on attend la fin
+                        content=file,  # httpx streame automatiquement
                     )
+                
+                logger.info(f"✅ Upload terminé: {upload_response.status_code}")
                 
                 # Vérifier le statut de la réponse
                 if upload_response.status_code in [200, 201, 204]:
@@ -319,18 +357,16 @@ class BunnyStorageService:
                     task.error_message = f"Erreur upload: {upload_response.status_code} - {error_detail}"
                     return False
                 
-            except requests.exceptions.RequestException as e:
+            except httpx.HTTPError as e:
                 logger.error(f"❌ Erreur réseau lors de l'upload: {e}")
                 task.error_message = f"Erreur réseau: {str(e)}"
                 return False
             
-            # 3. Vérifier le statut de la vidéo sur Bunny (polling jusqu'à "ready")
-            if not self._wait_for_bunny_processing(task, worker_name):
-                return False
-            
-            # 4. Générer l'URL finale
+            # 3. Générer l'URL finale et marquer comme uploadé
+            # Le service bunny_status_updater mettra à jour "processing" -> "ready" en background
             task.bunny_url = f"https://{self.config.cdn_hostname}/{task.bunny_video_id}/playlist.m3u8"
-            logger.info(f"✅ Vidéo prête sur Bunny CDN: {task.bunny_url}")
+            logger.info(f"✅ Upload terminé - encodage Bunny en cours en background")
+            logger.info(f"📺 URL vidéo (sera prête après encodage): {task.bunny_url}")
             
             return True
             
@@ -339,7 +375,7 @@ class BunnyStorageService:
             task.error_message = f"Erreur inattendue: {str(e)}"
             return False
     
-    def _wait_for_bunny_processing(self, task: UploadTask, worker_name: str, max_wait: int = 600) -> bool:
+    def _wait_for_bunny_processing(self, task: UploadTask, worker_name: str, max_wait: int = 1800) -> bool:
         """
         Attend que Bunny CDN termine l'encodage de la vidéo.
         
@@ -350,6 +386,9 @@ class BunnyStorageService:
         
         Returns:
             True si la vidéo est prête, False sinon
+        
+        Note:
+            Timeout augmenté à 30 minutes pour supporter les gros fichiers (400MB+)
         """
         logger.info(f"⏳ {worker_name}: Attente du processing Bunny pour {task.bunny_video_id}...")
         
@@ -359,11 +398,10 @@ class BunnyStorageService:
         
         while time.time() - start_time < max_wait:
             try:
-                # Récupérer le statut de la vidéo
-                status_response = requests.get(
+                # Récupérer le statut de la vidéo via httpx client
+                status_response = self.client.get(
                     check_url,
-                    headers=self.config.headers,
-                    timeout=10
+                    headers=self.config.headers
                 )
                 
                 if status_response.status_code == 200:
@@ -615,6 +653,10 @@ class BunnyStorageService:
         
         # Attendre la fin des uploads en cours
         self.executor.shutdown(wait=True)
+        
+        # Fermer le client HTTP
+        if hasattr(self, 'client'):
+            self.client.close()
         
         logger.info("✅ Service Bunny Storage arrêté")
 

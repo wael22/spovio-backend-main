@@ -251,6 +251,8 @@ class Video(db.Model):
             "deletion_status": deletion_status,  # ✅ Indicateur clair de l'état de suppression
             "is_expired": is_expired,  # ✅ NOUVEAU: Vidéo expirée (cloud supprimé/inexistant)
             "club_id": self.court.club_id if self.court else None,
+            "court_name": self.court.name if self.court else None,  # ✅ Nom du terrain
+            "club_name": self.court.club.name if (self.court and self.court.club) else None,  # ✅ Nom du club
             
             # État des fichiers locaux et cloud
             "local_file_path": self.local_file_path,

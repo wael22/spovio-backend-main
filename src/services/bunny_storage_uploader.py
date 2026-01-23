@@ -15,10 +15,14 @@ class BunnyStorageUploader:
     """Upload de fichiers vers Bunny Storage via l'API"""
     
     def __init__(self):
-        # Credentials depuis l'image fournie
-        self.storage_zone = "mysmash-2026"
+        # Credentials depuis variables d'environnement
+        self.storage_zone = os.environ.get('BUNNY_STORAGE_ZONE', 'mysmash-2026')
         self.hostname = "storage.bunnycdn.com"
-        self.access_key = os.environ.get('BUNNY_STORAGE_PASSWORD', 'a50de9ad-95fc-4330-a4825569ddd1-7db5-4ac7')
+        self.access_key = os.environ.get('BUNNY_STORAGE_PASSWORD')
+        
+        # Validation
+        if not self.access_key:
+            raise ValueError("BUNNY_STORAGE_PASSWORD manquant dans .env!")
         
         # Base URL pour l'API Storage
         self.base_url = f"https://{self.hostname}/{self.storage_zone}"
@@ -54,12 +58,13 @@ class BunnyStorageUploader:
                 'Content-Type': 'application/octet-stream'
             }
             
-            # Upload via PUT request
+            # Upload via PUT request avec timeout augmenté à 2h (comme vidéos)
+            timeout = int(os.environ.get('BUNNY_UPLOAD_TIMEOUT', '7200'))
             response = requests.put(
                 upload_url,
                 headers=headers,
                 data=file_data,
-                timeout=300  # 5 minutes timeout
+                timeout=timeout
             )
             
             response.raise_for_status()

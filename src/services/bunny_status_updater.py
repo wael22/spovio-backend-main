@@ -94,6 +94,22 @@ class BunnyStatusUpdater:
                         # Statuts Bunny: 0=Created, 1=Uploaded, 2=Processing, 3=Encoding, 4=Finished, 5=Failed
                         if status == 4:  # Finished
                             video.processing_status = 'ready'
+                            
+                            # 🆕 Créer une notification pour informer l'utilisateur
+                            try:
+                                from src.models.notification import Notification, NotificationType
+                                
+                                Notification.create_notification(
+                                    user_id=video.user_id,
+                                    notification_type=NotificationType.VIDEO,
+                                    title="🎬 Votre vidéo est prête !",
+                                    message=f"La vidéo '{video.title}' a été traitée avec succès et est maintenant disponible.",
+                                    link="/dashboard"
+                                )
+                                logger.info(f"✅ Notification créée pour user {video.user_id} - vidéo {video.id} prête")
+                            except Exception as notif_error:
+                                logger.error(f"❌ Erreur création notification: {notif_error}")
+                            
                             db.session.commit()
                             logger.info(f"✅ Vidéo {video.id} prête: {video.title}")
                         elif status == 5:  # Failed
@@ -103,6 +119,11 @@ class BunnyStatusUpdater:
                         elif status in [2, 3]:  # Processing, Encoding
                             video.processing_status = 'processing'
                             db.session.commit()
+                    elif response.status_code == 404:
+                        # Vidéo n'existe pas/plus sur Bunny CDN -> marquer comme failed et arrêter de vérifier
+                        video.processing_status = 'failed'
+                        db.session.commit()
+                        logger.warning(f"⚠️ Vidéo {video.id} introuvable sur Bunny (404) - marquée comme failed")
                     else:
                         logger.warning(f"⚠️ Impossible de vérifier vidéo {video.id}: HTTP {response.status_code}")
                         

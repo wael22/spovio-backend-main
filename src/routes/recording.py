@@ -683,6 +683,9 @@ def start_recording_v3():
         court_id = data.get('court_id')
         # Frontend envoie 'duration_minutes' (int) : 60, 90, 120, ou 200
         duration_minutes = data.get('duration_minutes')
+        # ✅ NOUVEAU: Récupérer le titre et description personnalisés
+        custom_title = data.get('title')
+        custom_description = data.get('description')
         
         # Valider la durée
         if not duration_minutes or duration_minutes not in [60, 90, 120, 200]:
@@ -753,10 +756,14 @@ def start_recording_v3():
                 # Récupérer le club pour le titre
                 club = Club.query.get(court.club_id)
                 
-                # Générer le titre par défaut: "date/club/terrain"
-                date_str = datetime.now().strftime("%d/%m/%Y")
-                club_name = club.name if club else "Club"
-                default_title = f"{date_str}/{club_name}/{court.name}"
+                # ✅ NOUVEAU: Utiliser le titre personnalisé s'il existe, sinon générer le titre par défaut
+                if custom_title:
+                    final_title = custom_title
+                else:
+                    # Générer le titre par défaut: "date/club/terrain"
+                    date_str = datetime.now().strftime("%d/%m/%Y")
+                    club_name = club.name if club else "Club"
+                    final_title = f"{date_str}/{club_name}/{court.name}"
                 
                 # Créer une entrée RecordingSession pour le suivi
                 recording_session = RecordingSession(
@@ -766,7 +773,8 @@ def start_recording_v3():
                     club_id=court.club_id,
                     planned_duration=duration_minutes,
                     status='active',
-                    title=default_title
+                    title=final_title,  # ✅ Utilise le titre personnalisé ou par défaut
+                    description=custom_description  # ✅ NOUVEAU: Sauvegarder la description
                 )
                 db.session.add(recording_session)
                 

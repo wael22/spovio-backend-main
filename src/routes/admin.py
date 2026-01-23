@@ -2919,3 +2919,265 @@ def get_all_videos():
         logger.error(f"❌ Erreur lors de la récupération des vidéos: {e}")
         return jsonify({"error": f"Erreur: {str(e)}"}), 500
 
+
+# --- VIDEO UPLOAD RECOVERY (SUPER ADMIN ONLY) ---
+
+@admin_bp.route("/videos/<int:video_id>/retry-bunny-upload", methods=["POST"])
+def retry_bunny_upload(video_id):
+    """
+    Re-upload manuel d'une vidéo vers Bunny CDN
+    Pour corriger les échecs d'upload
+    
+    Vérifie que le fichier local existe et ajoute la vidéo à la queue d'upload Bunny.
+    """
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+    
+    try:
+        video = Video.query.get_or_404(video_id)
+        
+        # Vérifier que fichier local existe
+        if not video.local_file_path:
+            return jsonify({
+                "error": "Aucun chemin de fichier local enregistré pour cette vidéo"
+            }), 404
+        
+        from pathlib import Path
+        if not Path(video.local_file_path).exists():
+            return jsonify({
+                "error": f"Fichier local introuvable: {video.local_file_path}"
+            }), 404
+        
+        # Importer le service Bunny Storage
+        from src.services.bunny_storage_service import bunny_storage_service
+        
+        # Créer tâche upload avec métadonnées existantes
+        bunny_video_id = video.bunny_video_id if video.bunny_video_id else None
+        
+        metadata = {
+            'video_id': video.id,
+            'title': video.title,
+            'user_id': video.user_id,
+            'bunny_video_id': bunny_video_id
+        }
+        
+        # Ajouter à la queue d'upload
+        task_id = bunny_storage_service.queue_upload(
+            local_path=video.local_file_path,
+            title=video.title,
+            metadata=metadata
+        )
+        
+        # Mettre à jour le statut en base
+        video.processing_status = 'pending'
+        db.session.commit()
+        
+        logger.info(f"✅ Upload programmé pour vidéo {video_id} (tâche: {task_id})")
+        
+        return jsonify({
+            "message": "Upload programmé avec succès",
+            "task_id": task_id,
+            "video_id": video_id,
+            "local_path": video.local_file_path
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Erreur retry upload vidéo {video_id}: {e}")
+        return jsonify({"error": f"Erreur: {str(e)}"}), 500
+
+
+@admin_bp.route("/videos/<int:video_id>/update-bunny-url", methods=["PATCH"])
+def update_bunny_url(video_id):
+    """
+    Mettre à jour manuellement l'URL Bunny d'une vidéo
+    Si admin a uploadé via dashboard Bunny
+    
+    Body JSON:
+    {
+        "bunny_video_id": "e660b8a0-f342-41fb-872e-3824ab90ab66",  # Requis
+        "bunny_url": "https://vz-cc4565cd-4e9.b-cdn.net/..."       # Optionnel
+    }
+    """
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+    
+    try:
+        video = Video.query.get_or_404(video_id)
+        data = request.get_json()
+        
+        bunny_video_id = data.get('bunny_video_id')
+        bunny_url = data.get('bunny_url')
+        
+        # Validation du bunny_video_id (doit être un GUID)
+        if not bunny_video_id:
+            return jsonify({"error": "bunny_video_id est requis"}), 400
+        
+        # Valider le format GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+        import re
+        guid_pattern = r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+        if not re.match(guid_pattern, bunny_video_id.lower()):
+            return jsonify({
+                "error": "Format bunny_video_id invalide. Attendu: GUID (ex: e660b8a0-f342-41fb-872e-3824ab90ab66)"
+            }), 400
+        
+        # Mettre à jour la vidéo
+        video.bunny_video_id = bunny_video_id
+        
+        if bunny_url:
+            video.file_url = bunny_url
+        else:
+            # Construire l'URL à partir du bunny_video_id si non fournie
+            # Format: https://vz-{library_id}.b-cdn.net/{video_id}/playlist.m3u8
+            from src.config.bunny_config import BUNNY_CONFIG
+            cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-cc4565cd-4e9.b-cdn.net')
+            video.file_url = f"https://{cdn_hostname}/{bunny_video_id}/playlist.m3u8"
+        
+        # Mettre à jour le statut
+        video.processing_status = 'ready'
+        video.cdn_migrated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        logger.info(f"✅ URL Bunny mise à jour pour vidéo {video_id}: {bunny_video_id}")
+        
+        return jsonify({
+            "message": "URL Bunny mise à jour avec succès",
+            "video": video.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Erreur mise à jour URL Bunny vidéo {video_id}: {e}")
+        return jsonify({"error": f"Erreur: {str(e)}"}), 500
+
+
+@admin_bp.route("/videos/create-manual", methods=["POST"])
+def create_manual_video():
+    """
+    Créer manuellement une nouvelle vidéo pour un joueur
+    Utile pour ajouter des vidéos uploadées via dashboard Bunny
+    
+    Body JSON:
+    {
+        "user_id": 123,                                              # Requis
+        "bunny_video_id": "e660b8a0-f342-41fb-872e-3824ab90ab66",   # Requis
+        "bunny_url": "https://vz-cc4565cd-4e9.b-cdn.net/...",       # Optionnel
+        "title": "Ma vidéo de padel",                                # Requis
+        "description": "Description...",                             # Optionnel
+        "court_id": 5                                                # Optionnel
+    }
+    """
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+    
+    try:
+        data = request.get_json()
+        
+        # Validation des champs requis
+        user_id = data.get('user_id')
+        bunny_video_id = data.get('bunny_video_id')
+        title = data.get('title')
+        
+        if not user_id:
+            return jsonify({"error": "user_id est requis"}), 400
+        
+        if not bunny_video_id:
+            return jsonify({"error": "bunny_video_id est requis"}), 400
+            
+        if not title:
+            return jsonify({"error": "title est requis"}), 400
+        
+        # Vérifier que l'utilisateur existe
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": f"Utilisateur {user_id} introuvable"}), 404
+        
+        # Vérifier que l'utilisateur est un joueur
+        if user.role != UserRole.PLAYER:
+            return jsonify({"error": "L'utilisateur doit être un joueur"}), 400
+        
+        # Valider le format GUID du bunny_video_id
+        import re
+        guid_pattern = r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+        if not re.match(guid_pattern, bunny_video_id.lower()):
+            return jsonify({
+                "error": "Format bunny_video_id invalide. Attendu: GUID (ex: e660b8a0-f342-41fb-872e-3824ab90ab66)"
+            }), 400
+        
+        # Récupérer les champs optionnels
+        bunny_url = data.get('bunny_url')
+        description = data.get('description', '')
+        court_id = data.get('court_id')
+        duration = data.get('duration')  # En secondes
+        
+        # Si court_id fourni, vérifier qu'il existe
+        if court_id:
+            court = Court.query.get(court_id)
+            if not court:
+                return jsonify({"error": f"Terrain {court_id} introuvable"}), 404
+        
+        # Générer l'URL si non fournie
+        if not bunny_url:
+            from src.config.bunny_config import BUNNY_CONFIG
+            cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-cc4565cd-4e9.b-cdn.net')
+            bunny_url = f"https://{cdn_hostname}/{bunny_video_id}/playlist.m3u8"
+        
+        # Si durée non fournie, essayer de la récupérer depuis Bunny API
+        if not duration:
+            try:
+                from src.config.bunny_config import BUNNY_CONFIG
+                import httpx
+                
+                api_key = BUNNY_CONFIG.get('api_key')
+                library_id = BUNNY_CONFIG.get('library_id')
+                
+                if api_key and library_id:
+                    url = f"https://video.bunnycdn.com/library/{library_id}/videos/{bunny_video_id}"
+                    headers = {"AccessKey": api_key}
+                    
+                    with httpx.Client(timeout=10.0) as client:
+                        response = client.get(url, headers=headers)
+                        
+                        if response.status_code == 200:
+                            video_info = response.json()
+                            duration = video_info.get('length', 0)  # Bunny retourne la durée en secondes
+                            logger.info(f"📊 Durée détectée depuis Bunny: {duration}s (Video ID: {bunny_video_id})")
+                        else:
+                            logger.warning(f"⚠️ Impossible de récupérer la durée depuis Bunny: {response.status_code}")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur récupération durée depuis Bunny: {e}")
+                # Continuer sans durée si échec
+        
+        # Créer la nouvelle vidéo
+        new_video = Video(
+            title=title,
+            description=description,
+            user_id=user_id,
+            court_id=court_id,
+            bunny_video_id=bunny_video_id,
+            file_url=bunny_url,
+            duration=duration,  # Peut être None si non fournie et non détectée
+            processing_status='ready',  # Directement prête
+            cdn_migrated_at=datetime.utcnow(),
+            is_unlocked=True,  # Débloquée par défaut pour vidéos manuelles
+            credits_cost=0,  # Pas de coût pour vidéos manuelles
+            recorded_at=datetime.utcnow(),
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(new_video)
+        db.session.commit()
+        
+        logger.info(f"✅ Vidéo manuelle créée: ID {new_video.id} pour user {user.name} ({user.email})")
+        
+        return jsonify({
+            "message": "Vidéo créée avec succès",
+            "video": new_video.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Erreur création vidéo manuelle: {e}")
+        return jsonify({"error": f"Erreur: {str(e)}"}), 500
+
