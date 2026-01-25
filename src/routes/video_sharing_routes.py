@@ -42,7 +42,7 @@ def send_share_email(recipient_email, recipient_name, sender_name, video_title, 
         msg = MIMEMultipart()
         msg['From'] = SMTP_FROM_EMAIL
         msg['To'] = recipient_email
-        msg['Subject'] = f"MySmash - {sender_name} a partagé une vidéo avec vous"
+        msg['Subject'] = f"Spovio - {sender_name} a partagé une vidéo avec vous"
         
         # URL pour accéder aux vidéos partagées
         shared_videos_url = f"{FRONTEND_URL}/shared-with-me"
@@ -51,7 +51,7 @@ def send_share_email(recipient_email, recipient_name, sender_name, video_title, 
         personal_message_html = ""
         if message:
             personal_message_html = f"""
-            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #10b981;">
+            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #06b6d4;">
                 <p style="color: #374151; font-size: 14px; margin: 0; line-height: 1.6;">
                     <strong>💬 Message de {sender_name} :</strong><br>
                     "{message}"
@@ -65,8 +65,8 @@ def send_share_email(recipient_email, recipient_name, sender_name, video_title, 
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5;">
             <div style="max-width: 600px; margin: 40px auto; padding: 0; background-color: #ffffff;">
                 <!-- Header -->
-                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); text-align: center; padding: 40px 20px; border-radius: 10px 10px 0 0;">
-                    <h1 style="color: #ffffff; margin: 0; font-size: 32px;">MySmash</h1>
+                <div style="background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%); text-align: center; padding: 40px 20px; border-radius: 10px 10px 0 0;">
+                    <h1 style="color: #ffffff; margin: 0; font-size: 32px;">Spovio</h1>
                     <p style="color: #ffffff; font-size: 16px; margin: 10px 0 0 0; opacity: 0.95;">Votre plateforme d'enregistrement de matchs de padel</p>
                 </div>
                 
@@ -75,7 +75,7 @@ def send_share_email(recipient_email, recipient_name, sender_name, video_title, 
                     <h2 style="color: #1f2937; margin: 0 0 20px 0; font-size: 24px;">Bonjour {recipient_name} ! 🎾</h2>
                     
                     <p style="color: #4b5563; font-size: 16px; margin-bottom: 25px; line-height: 1.6;">
-                        <strong>{sender_name}</strong> a partagé une vidéo avec vous sur <strong>MySmash</strong> !
+                        <strong>{sender_name}</strong> a partagé une vidéo avec vous sur <strong>Spovio</strong> !
                     </p>
                     
                     <!-- Video Info Box -->
@@ -89,19 +89,19 @@ def send_share_email(recipient_email, recipient_name, sender_name, video_title, 
                     <!-- CTA Button -->
                     <div style="text-align: center; margin: 35px 0;">
                         <a href="{shared_videos_url}" 
-                           style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: all 0.3s;">
+                           style="display: inline-block; background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(6, 182, 212, 0.3); transition: all 0.3s;">
                             ▶️ Voir la vidéo partagée
                         </a>
                     </div>
                     
                     <p style="color: #6b7280; font-size: 14px; text-align: center; margin: 25px 0;">
-                        Ou cliquez sur ce lien : <a href="{shared_videos_url}" style="color: #10b981; text-decoration: none;">{shared_videos_url}</a>
+                        Ou cliquez sur ce lien : <a href="{shared_videos_url}" style="color: #06b6d4; text-decoration: none;">{shared_videos_url}</a>
                     </p>
                     
                     <!-- Info Box -->
                     <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
                         <p style="margin: 0; color: #1e40af; font-size: 14px;">
-                            <strong>ℹ️ Astuce :</strong> Vous pouvez consulter toutes vos vidéos partagées dans la section "Partagé avec moi" de votre tableau de bord MySmash.
+                            <strong>ℹ️ Astuce :</strong> Vous pouvez consulter toutes vos vidéos partagées dans la section "Partagé avec moi" de votre tableau de bord Spovio.
                         </p>
                     </div>
                 </div>
@@ -109,10 +109,10 @@ def send_share_email(recipient_email, recipient_name, sender_name, video_title, 
                 <!-- Footer -->
                 <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border-top: 1px solid #e5e7eb;">
                     <p style="color: #6b7280; font-size: 14px; margin: 0 0 10px 0; text-align: center;">
-                        Besoin d'aide ? Contactez-nous à <a href="mailto:support@mysmash.tn" style="color: #10b981; text-decoration: none;">support@mysmash.tn</a>
+                        Besoin d'aide ? Contactez-nous à <a href="mailto:contact@spovio.net" style="color: #06b6d4; text-decoration: none;">contact@spovio.net</a>
                     </p>
                     <p style="color: #9ca3af; font-size: 12px; margin: 15px 0 0 0; text-align: center;">
-                        © 2024 MySmash - Tous droits réservés<br>
+                        © {2026} Spovio - Tous droits réservés<br>
                         Votre passion du padel, notre technologie
                     </p>
                 </div>

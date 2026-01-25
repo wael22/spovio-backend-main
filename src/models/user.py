@@ -60,6 +60,7 @@ class User(db.Model):
     last_login_at = db.Column(db.DateTime, nullable=True)
     email_verified_at = db.Column(db.DateTime, nullable=True)
     google_id = db.Column(db.String(100), nullable=True, unique=True)  # ID Google pour l'authentification
+    avatar = db.Column(db.String(255), nullable=True)  # URL de la photo de profil
     
     # Champs pour la vérification d'email
     email_verified = db.Column(db.Boolean, default=False, nullable=False)  # Statut de vérification
@@ -88,6 +89,7 @@ class User(db.Model):
             'id': self.id,
             'email': self.email,
             'name': self.name,
+            'avatar': self.avatar,
             'phone_number': self.phone_number,
             'role': self.role.value,
             'status': self.status.value,

@@ -63,7 +63,7 @@ def send_verification_email(email, code, name=None):
         msg = MIMEMultipart()
         msg['From'] = SMTP_FROM_EMAIL
         msg['To'] = email
-        msg['Subject'] = "MySmash - Vérifiez votre adresse email"
+        msg['Subject'] = "Spovio - Vérifiez votre adresse email"
         
         # Nom d'affichage
         display_name = name if name else email.split('@')[0]
@@ -76,8 +76,8 @@ def send_verification_email(email, code, name=None):
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5;">
             <div style="max-width: 600px; margin: 40px auto; padding: 0; background-color: #ffffff;">
                 <!-- Header -->
-                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); text-align: center; padding: 40px 20px; border-radius: 10px 10px 0 0;">
-                    <h1 style="color: #ffffff; margin: 0; font-size: 32px;">MySmash</h1>
+                <div style="background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%); text-align: center; padding: 40px 20px; border-radius: 10px 10px 0 0;">
+                    <h1 style="color: #ffffff; margin: 0; font-size: 32px;">Spovio</h1>
                     <p style="color: #ffffff; font-size: 16px; margin: 10px 0 0 0; opacity: 0.95;">Votre plateforme d'enregistrement de matchs de padel</p>
                 </div>
                 
@@ -86,7 +86,7 @@ def send_verification_email(email, code, name=None):
                     <h2 style="color: #1f2937; margin: 0 0 20px 0; font-size: 24px;">Bienvenue {display_name} ! 🎾</h2>
                     
                     <p style="color: #4b5563; font-size: 16px; margin-bottom: 25px; line-height: 1.6;">
-                        Merci de vous être inscrit sur <strong>MySmash</strong>. Vous êtes à une étape de profiter de tous les avantages de notre plateforme !
+                        Merci de vous être inscrit sur <strong>Spovio</strong>. Vous êtes à une étape de profiter de tous les avantages de notre plateforme !
                     </p>
                     
                     <p style="color: #4b5563; font-size: 16px; margin-bottom: 30px;">
@@ -103,13 +103,13 @@ def send_verification_email(email, code, name=None):
                     <!-- CTA Button -->
                     <div style="text-align: center; margin: 35px 0;">
                         <a href="{verification_url}" 
-                           style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: all 0.3s;">
+                           style="display: inline-block; background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(6, 182, 212, 0.3); transition: all 0.3s;">
                             ✅ Activer mon compte
                         </a>
                     </div>
                     
                     <p style="color: #6b7280; font-size: 14px; text-align: center; margin: 25px 0;">
-                        Ou cliquez sur ce lien : <a href="{verification_url}" style="color: #10b981; text-decoration: none;">{verification_url}</a>
+                        Ou cliquez sur ce lien : <a href="{verification_url}" style="color: #06b6d4; text-decoration: none;">{verification_url}</a>
                     </p>
                     
                     <!-- Warning Box -->
@@ -122,7 +122,7 @@ def send_verification_email(email, code, name=None):
                     <!-- Security Notice -->
                     <div style="background-color: #f3f4f6; padding: 15px 20px; border-radius: 8px; margin: 25px 0;">
                         <p style="color: #6b7280; font-size: 13px; margin: 0; line-height: 1.5;">
-                            <strong>🔒 Sécurité :</strong> Si vous n'avez pas créé de compte sur MySmash, ignorez simplement cet email. Votre adresse email restera protégée.
+                            <strong>🔒 Sécurité :</strong> Si vous n'avez pas créé de compte sur Spovio, ignorez simplement cet email. Votre adresse email restera protégée.
                         </p>
                     </div>
                 </div>
@@ -130,10 +130,10 @@ def send_verification_email(email, code, name=None):
                 <!-- Footer -->
                 <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border-top: 1px solid #e5e7eb;">
                     <p style="color: #6b7280; font-size: 14px; margin: 0 0 10px 0; text-align: center;">
-                        Besoin d'aide ? Contactez-nous à <a href="mailto:support@mysmash.com" style="color: #10b981; text-decoration: none;">support@mysmash.com</a>
+                        Besoin d'aide ? Contactez-nous à <a href="mailto:contact@spovio.net" style="color: #06b6d4; text-decoration: none;">contact@spovio.net</a>
                     </p>
                     <p style="color: #9ca3af; font-size: 12px; margin: 15px 0 0 0; text-align: center;">
-                        © 2024 MySmash - Tous droits réservés<br>
+                        © {datetime.datetime.now().year} Spovio - Tous droits réservés<br>
                         Votre passion du padel, notre technologie
                     </p>
                 </div>

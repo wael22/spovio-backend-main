@@ -171,16 +171,20 @@ def create_app(config_name=None):
     @app.after_request
     def add_cors_headers(response):
         """Add CORS headers to all responses"""
-        origin = request.headers.get('Origin', '')
+        origin = request.headers.get('Origin')
         
-        if is_origin_allowed(origin):
+        if origin and is_origin_allowed(origin) and not request.path.startswith('/api/static/'):
             response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
         else:
+            # Pour les requêtes sans Origin, les images statiques, ou non autorisées
             response.headers['Access-Control-Allow-Origin'] = '*'
+            # Pas de credentials avec '*'
+            if 'Access-Control-Allow-Credentials' in response.headers:
+                del response.headers['Access-Control-Allow-Credentials']
         
         response.headers['Access-Control-Allow-Methods'] = ALLOWED_METHODS
         response.headers['Access-Control-Allow-Headers'] = ALLOWED_HEADERS
-        response.headers['Access-Control-Allow-Credentials'] = 'true'  # Required for session-based auth!
         
         return response
     
@@ -257,6 +261,26 @@ def create_app(config_name=None):
     
 
     
+
+    @app.route('/api/static/avatars/<path:filename>')
+    def serve_avatar(filename):
+        """Serveur d'avatar manuel pour garantir les headers CORS"""
+        import os
+        from flask import send_from_directory, make_response
+        
+        # Chemin absolu vers le dossier d'avatars
+        avatar_dir = os.path.join(app.root_path, 'static/uploads/avatars')
+        
+        response = make_response(send_from_directory(avatar_dir, filename))
+        
+        # Forcer les headers CORS et CORP (Cross-Origin Resource Policy)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        
+        print(f"🖼️ Serving avatar manual: {filename}")
+        return response
+
     @app.route('/')
     def index():
         """Page d'accueil de l'API"""

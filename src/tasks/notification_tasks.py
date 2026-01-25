@@ -127,7 +127,7 @@ def send_email_notification(self, user_id, title, message, notification_id=None)
         {message}
         
         Cordialement,
-        L'équipe MySmash
+        L'équipe Spovio
         """
         
         logger.info(f"Email simulé envoyé à {user.email}: {title}")

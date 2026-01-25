@@ -99,23 +99,23 @@ def send_password_reset_email(email, token):
         msg = MIMEMultipart()
         msg['From'] = SMTP_FROM_EMAIL
         msg['To'] = email
-        msg['Subject'] = "MySmash - Réinitialisation de votre mot de passe"
+        msg['Subject'] = "Spovio - Réinitialisation de votre mot de passe"
         
         # Corps du message HTML
         html_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6;">
             <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 5px;">
-                <h2 style="color: #333;">Réinitialisation de votre mot de passe MySmash</h2>
+                <h2 style="color: #333;">Réinitialisation de votre mot de passe Spovio</h2>
                 <p>Vous avez demandé la réinitialisation de votre mot de passe. Veuillez cliquer sur le lien ci-dessous pour créer un nouveau mot de passe :</p>
                 <p style="margin: 25px 0;">
-                    <a href="{reset_url}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                    <a href="{reset_url}" style="background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%); color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">
                         Réinitialiser mon mot de passe
                     </a>
                 </p>
                 <p>Ce lien expirera dans 1 heure.</p>
-                <p>Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet email.</p>
-                <p>Cordialement,<br>L'équipe MySmash</p>
+                <p>Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorez cet email.</p>
+                <p>Cordialement,<br>L'équipe Spovio</p>
             </div>
         </body>
         </html>

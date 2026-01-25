@@ -19,6 +19,7 @@ import os
 import json
 from datetime import datetime
 
+
 logger = logging.getLogger(__name__)
 
 # Récupération des variables d'environnement Google OAuth
@@ -266,6 +267,67 @@ def update_profile():
 
 
 # ====================================================================
+# GESTION DES AVATARS
+# ====================================================================
+from werkzeug.utils import secure_filename
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@auth_bp.route('/upload-avatar', methods=['POST'])
+def upload_avatar():
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Non authentifié'}), 401
+            
+        if 'avatar' not in request.files:
+            return jsonify({'error': 'Aucun fichier envoyé'}), 400
+            
+        file = request.files['avatar']
+        
+        if file.filename == '':
+            return jsonify({'error': 'Aucun fichier sélectionné'}), 400
+            
+        if file and allowed_file(file.filename):
+            # Créer le dossier s'il n'existe pas
+            upload_folder = os.path.join(os.getcwd(), 'src', 'static', 'uploads', 'avatars')
+            os.makedirs(upload_folder, exist_ok=True)
+            
+            # Sécuriser le nom du fichier
+            filename = secure_filename(f"user_{user_id}_{int(datetime.now().timestamp())}_{file.filename}")
+            file_path = os.path.join(upload_folder, filename)
+            
+            # Sauvegarder le fichier
+            file.save(file_path)
+            
+            # Mettre à jour l'utilisateur
+            user = User.query.get(user_id)
+            # URL accessible depuis le frontend (via static)
+            # L'URL doit correspondre à la config statique de Flask ou Nginx
+            # Supposons que /static est servi
+            avatar_url = f"/static/uploads/avatars/{filename}"
+            
+            user.avatar = avatar_url
+            db.session.commit()
+            
+            return jsonify({
+                'message': 'Avatar mis à jour avec succès',
+                'avatar_url': avatar_url,
+                'user': user.to_dict()
+            }), 200
+            
+        return jsonify({'error': 'Type de fichier non autorisé'}), 400
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de l'upload de l'avatar: {e}")
+        return jsonify({'error': 'Erreur serveur lors de l\'upload'}), 500
+
+
+# ====================================================================
 # NOUVELLE ROUTE PLACÉE À LA FIN DU FICHIER
 # ====================================================================
 @auth_bp.route('/change-password', methods=['POST'])
@@ -332,7 +394,8 @@ def google_callback():
             return jsonify({'error': 'Échec d\'obtention des informations utilisateur'}), 401
             
         # Redirection vers le frontend avec un code temporaire pour compléter l'authentification
-        frontend_callback_url = f"http://localhost:3000/google-auth-callback?token={id_token}"
+        frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+        frontend_callback_url = f"{frontend_url}/google-auth-callback?token={id_token}"
         return redirect(frontend_callback_url)
         
     except Exception as e:

@@ -35,6 +35,11 @@ if GOOGLE_CLIENT_ID == 'YOUR_GOOGLE_CLIENT_ID':
     logger.warning("⚠️ Exécutez setup_google_auth.ps1 après avoir configuré vos identifiants Google OAuth.")
     logger.warning("⚠️ Consultez le fichier GOOGLE_OAUTH_SETUP.md pour les instructions détaillées.")
 
+
+# Import Google Auth libraries (already in requirements.txt)
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+
 def verify_google_token(token):
     """Vérifie un token Google et retourne les infos utilisateur"""
     try:
@@ -44,47 +49,32 @@ def verify_google_token(token):
             
         logger.info(f"🔍 Tentative de vérification du token Google...")
         
-        # Récupérer les clés publiques de Google
-        keys_response = requests.get('https://www.googleapis.com/oauth2/v1/certs')
-        keys = keys_response.json()
-        
-        # Décoder le header du token pour obtenir le kid
-        header = jwt.get_unverified_header(token)
-        kid = header.get('kid')
-        
-        if not kid or kid not in keys:
-            logger.error(f"❌ 'kid' invalide ou manquant dans le token: {kid}")
-            return None
-            
-        # Vérifier le token avec la clé correspondante
-        public_key = keys[kid]
-        
-        # Décoder et vérifier le token
-        payload = jwt.decode(
-            token,
-            public_key,
-            algorithms=['RS256'],
-            audience=GOOGLE_CLIENT_ID,
-            options={"verify_exp": True}
+        # Utiliser la librairie officielle Google pour la vérification
+        # Cela gère automatiquement les clés publiques, le cache, et la validation
+        id_info = id_token.verify_oauth2_token(
+            token, 
+            google_requests.Request(), 
+            GOOGLE_CLIENT_ID
         )
-        
-        # Vérifier que le token est destiné à votre application
-        if payload['aud'] != GOOGLE_CLIENT_ID:
-            raise ValueError('Client ID incorrect')
-        
+
+        # Si on arrive ici, le token est valide
         # Retourner les informations d'utilisateur
         return {
-            'email': payload['email'],
-            'name': payload.get('name', ''),
-            'picture': payload.get('picture', ''),
-            'google_id': payload['sub'],
-            'email_verified': payload.get('email_verified', False)
+            'email': id_info['email'],
+            'name': id_info.get('name', ''),
+            'picture': id_info.get('picture', ''),
+            'google_id': id_info['sub'],
+            'email_verified': id_info.get('email_verified', False)
         }
         
-    except Exception as e:
+    except ValueError as e:
         # Token invalide
-        print(f"Erreur de vérification du token Google: {e}")
+        logger.error(f"❌ Erreur de vérification du token Google: {e}")
         return None
+    except Exception as e:
+        logger.error(f"❌ Erreur inattendue lors de la vérification du token: {e}")
+        return None
+
 
 def get_google_user_info(access_token):
     """Récupère les informations de l'utilisateur Google via l'API"""
