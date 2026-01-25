@@ -133,11 +133,50 @@ def share_video(video_id):
 @videos_bp.route('/<int:video_id>/download', methods=['GET'])
 @login_required
 def download_video(video_id):
-    """Télécharge une vidéo via proxy backend."""
-    from src.services.video_download_proxy import download_video_proxy
+    """Télécharge une vidéo via redirection directe vers Bunny CDN MP4."""
+    from src.services.bunny_mp4_url_helper import get_mp4_url_helper
+    from flask import redirect, request as flask_request
+    
     user = get_current_user()
     video = Video.query.get_or_404(video_id)
-    return download_video_proxy(video_id, user, video, api_response) 
+    
+    # Vérifier les permissions
+    if video.user_id != user.id and not video.is_unlocked:
+        return api_response(error='Accès non autorisé', status=403)
+    
+    # Vérifier que la vidéo a un bunny_video_id
+    if not video.bunny_video_id:
+        return api_response(
+            error='Vidéo non disponible pour téléchargement. Cette vidéo n\'a pas été uploadée sur Bunny Stream.',
+            status=404
+        )
+    
+    # Vérifier que la vidéo n'est pas expirée/supprimée du cloud
+    if video.cloud_deleted_at:
+        return api_response(
+            error='Cette vidéo a été supprimée du cloud et n\'est plus disponible pour téléchargement.',
+            status=410  # Gone
+        )
+    
+    # Récupérer la résolution demandée (par défaut 720p)
+    resolution = flask_request.args.get('resolution', '720p')
+    
+    # Générer l'URL MP4 directe
+    try:
+        mp4_helper = get_mp4_url_helper()
+        mp4_url = mp4_helper.get_mp4_download_url(video.bunny_video_id, resolution)
+        
+        logger.info(f"✅ Redirection téléchargement vidéo {video_id} → {resolution}: {mp4_url}")
+        
+        # Redirection 302 temporaire vers l'URL MP4 sur Bunny CDN
+        return redirect(mp4_url, code=302)
+        
+    except ValueError as e:
+        logger.error(f"❌ Erreur génération URL MP4 pour vidéo {video_id}: {e}")
+        return api_response(
+            error=f'Erreur lors de la génération de l\'URL de téléchargement: {str(e)}',
+            status=500
+        ) 
 
 @videos_bp.route('/<int:video_id>/watch', methods=['GET'])
 def watch_video(video_id):

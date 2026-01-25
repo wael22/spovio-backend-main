@@ -167,24 +167,17 @@ def upload_direct_clip(current_user):
         
         filename = f"clip_{clip.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
         
-        # Upload vers Bunny Stream (pour streaming)
+        # Upload vers Bunny Stream (pour streaming ET téléchargement MP4)
         clip_url, bunny_video_id = manual_clip_service._upload_to_bunny(temp_path, filename)
         logger.info(f"✅ Uploaded to Bunny Stream: {clip_url}")
         
-        # 🆕 Upload vers Bunny Storage (pour téléchargement MP4)
-        storage_url = None
-        try:
-            from src.services.bunny_storage_uploader import upload_clip_to_storage
-            storage_url = upload_clip_to_storage(temp_path, filename)
-            logger.info(f"✅ Uploaded to Bunny Storage: {storage_url}")
-        except Exception as e:
-            logger.error(f"⚠️ Failed to upload to Bunny Storage: {e}")
-            # Clip will still work for streaming
+        # ⚠️ Bunny Storage désactivé - On utilise uniquement Bunny Stream (comme les vidéos)
+        # Les téléchargements MP4 se font via Bunny Stream: /clips/{id}/download → play_720p.mp4
         
-        # Mettre à jour le clip avec les 2 URLs
-        clip.file_url = clip_url  # Bunny Stream (HLS)
-        clip.storage_download_url = storage_url  # Bunny Storage (MP4)
-        clip.bunny_video_id = bunny_video_id
+        # Mettre à jour le clip avec l'URL Bunny Stream
+        clip.file_url = clip_url  # Bunny Stream (HLS + MP4)
+        clip.bunny_video_id = bunny_video_id  # GUID Bunny Stream (pour URL MP4)
+        clip.storage_download_url = None  # Pas de Bunny Storage
         clip.status = 'completed'
         clip.completed_at = datetime.utcnow()
         
@@ -348,87 +341,57 @@ def get_share_links(current_user, clip_id):
 @login_required
 def download_clip(current_user, clip_id):
     """
-    Télécharge un clip en MP4 depuis Bunny Storage
-    Streams le fichier directement via le backend (proxy)
+    Télécharge un clip en MP4 - redirection directe vers Bunny Stream CDN (comme les vidéos)
     """
     try:
-        from flask import Response, stream_with_context
-        import requests as req
+        from flask import redirect
+        from src.services.bunny_mp4_url_helper import get_mp4_url_helper
         
         clip = UserClip.query.get(clip_id)
         
         if not clip:
             return jsonify({'error': 'Clip not found'}), 404
         
+        # Vérifier les permissions
         if clip.user_id != current_user.id:
             return jsonify({'error': 'Access denied'}), 403
         
-        # Vérifier que le clip a une URL de téléchargement
-        if not clip.storage_download_url:
+        # Vérifier que le clip est complété et a un bunny_video_id
+        if clip.status != 'completed':
+            return jsonify({
+                'error': 'Clip not ready',
+                'message': 'This clip is still being processed. Please try again later.'
+            }), 404
+        
+        if not clip.bunny_video_id:
             return jsonify({
                 'error': 'Clip not available for download',
-                'message': 'This clip is only available for streaming'
+                'message': 'This clip was not uploaded to Bunny Stream.'
             }), 404
         
         # Incrémenter le compteur de téléchargements
         clip.download_count += 1
         db.session.commit()
         
-        logger.info(f"📥 Downloading clip {clip_id}: {clip.title}")
-        
-        # Obtenir la clé d'accès Bunny Storage
-        import os
-        bunny_storage_password = os.environ.get('BUNNY_STORAGE_PASSWORD')
-        storage_zone = os.environ.get('BUNNY_STORAGE_ZONE', 'mysmash-2026')
-        
-        if not bunny_storage_password:
-            return jsonify({'error': 'Bunny Storage not configured'}), 500
-        
-        # Extraire le chemin du fichier depuis l'URL CDN
-        # URL CDN: https://mysmash-2026.b-cdn.net/clips/clip_33_20260123_094457.mp4
-        # Convertir en URL API: https://storage.bunnycdn.com/mysmash-2026/clips/clip_33_20260123_094457.mp4
-        cdn_url = clip.storage_download_url
-        # Extraire le chemin après le nom du storage zone
-        if f"{storage_zone}.b-cdn.net/" in cdn_url:
-            file_path = cdn_url.split(f"{storage_zone}.b-cdn.net/")[1]
-        else:
-            return jsonify({'error': 'Invalid storage URL'}), 500
-        
-        # Construire l'URL de l'API Storage
-        storage_api_url = f"https://storage.bunnycdn.com/{storage_zone}/{file_path}"
-        
-        logger.info(f"📥 Downloading from Storage API: {storage_api_url}")
-        
-        # Stream depuis Bunny Storage API avec authentification
-        def generate():
-            headers = {
-                'AccessKey': bunny_storage_password
-            }
+        # Générer l'URL MP4 depuis Bunny Stream (comme les vidéos)
+        try:
+            mp4_helper = get_mp4_url_helper()
+            mp4_url = mp4_helper.get_mp4_download_url(clip.bunny_video_id, resolution='720p')
             
-            with req.get(storage_api_url, headers=headers, stream=True, timeout=60) as r:
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        yield chunk
+            logger.info(f"✅ Redirection téléchargement clip {clip_id} → {mp4_url}")
+            
+            # Redirection 302 directe vers Bunny Stream CDN (comme les vidéos)
+            return redirect(mp4_url, code=302)
+            
+        except ValueError as e:
+            logger.error(f"❌ Erreur génération URL MP4 pour clip {clip_id}: {e}")
+            return jsonify({
+                'error': f'Error generating download URL: {str(e)}',
+                'status': 500
+            }), 500
         
-        # Nom de fichier sécurisé
-        import re
-        safe_filename = re.sub(r'[^a-zA-Z0-9_-]', '_', clip.title)
-        filename = f"{safe_filename}.mp4"
-        
-        return Response(
-            stream_with_context(generate()),
-            headers={
-                'Content-Disposition': f'attachment; filename="{filename}"',
-                'Content-Type': 'video/mp4'
-            }
-        )
-        
-    except req.exceptions.RequestException as e:
-        logger.error(f"Error downloading from Bunny Storage: {e}")
-        return jsonify({'error': 'Failed to download clip from storage'}), 502
     except Exception as e:
-        logger.error(f"Error downloading clip: {e}")
+        logger.error(f"❌ Erreur téléchargement clip {clip_id}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @clip_bp.route('/<int:clip_id>/download', methods=['POST'])
