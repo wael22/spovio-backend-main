@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from ..models.user import User, UserRole, UserStatus, Club  # Ajout de l'import Club pour la synchronisation
 from ..models.system_settings import SystemSettings
 from ..models.database import db
+from ..models.notification import Notification, NotificationType
 from ..services.google_auth_service import verify_google_token, get_google_tokens, get_google_user_info
 from ..services.email_verification_service import (
     generate_verification_code,
@@ -69,6 +70,19 @@ def register():
         )
         db.session.add(new_user)
         db.session.commit()
+        
+        # 🔔 Créer une notification de bienvenue
+        try:
+            Notification.create_notification(
+                user_id=new_user.id,
+                notification_type=NotificationType.SYSTEM,
+                title="Bienvenue sur Spovio ! 🎾",
+                message=f"Bonjour {new_user.name}, bienvenue sur la plateforme ! N'oubliez pas de vérifier votre email pour activer toutes les fonctionnalités."
+            )
+            db.session.commit()
+        except Exception as e:
+            logger.error(f"Erreur création notif bienvenue: {e}")
+            # On ne bloque pas l'inscription pour une notif
         
         # Envoyer l'email de vérification
         send_verification_email(email, verification_code, name)
@@ -449,6 +463,18 @@ def google_authenticate():
             )
             db.session.add(user)
             db.session.commit()
+            
+            # 🔔 Créer une notification de bienvenue pour Google Auth
+            try:
+                Notification.create_notification(
+                    user_id=user.id,
+                    notification_type=NotificationType.SYSTEM,
+                    title="Bienvenue sur Spovio ! 🎾",
+                    message=f"Bonjour {user.name}, bienvenue sur Spovio ! Votre compte a été créé avec succès via Google."
+                )
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Erreur création notif bienvenue Google: {e}")
         
         # 🆕 Générer JWT token
         jwt_token = generate_jwt_token(user.id, user.role.value)
@@ -609,3 +635,64 @@ def resend_verification():
         logger.error(f"❌ Erreur lors du renvoi du code: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': 'Erreur lors du renvoi du code'}), 500
+
+
+# ====================================================================
+# ROUTES DE RÉINITIALISATION DE MOT DE PASSE
+# ====================================================================
+from ..services.password_reset_service import request_password_reset, reset_password as service_reset_password
+from ..services.user_service import UserService
+
+@auth_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    """Demande de réinitialisation de mot de passe"""
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip().lower()
+        
+        if not email:
+            return jsonify({'error': 'Email requis'}), 400
+            
+        # Instancier le UserService
+        user_service = UserService()
+        
+        # Traiter la demande (retourne toujours True pour sécurité)
+        request_password_reset(email, user_service)
+        
+        return jsonify({
+            'message': 'Si un compte existe avec cet email, un lien de réinitialisation a été envoyé.'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la demande de réinitialisation: {str(e)}")
+        return jsonify({'error': 'Erreur lors du traitement de la demande'}), 500
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password_route():
+    """Réinitialisation effective du mot de passe avec token"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        new_password = data.get('new_password')
+        
+        if not token or not new_password:
+            return jsonify({'error': 'Token et nouveau mot de passe requis'}), 400
+            
+        if len(new_password) < 6:
+            return jsonify({'error': 'Le mot de passe doit contenir au moins 6 caractères'}), 400
+            
+        # Instancier le UserService
+        user_service = UserService()
+        
+        # Tenter la réinitialisation
+        success = service_reset_password(token, new_password, user_service)
+        
+        if success:
+            return jsonify({'message': 'Mot de passe réinitialisé avec succès'}), 200
+        else:
+            return jsonify({'error': 'Lien de réinitialisation invalide ou expiré'}), 400
+            
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la réinitialisation du mot de passe: {str(e)}")
+        return jsonify({'error': 'Erreur lors de la réinitialisation'}), 500
