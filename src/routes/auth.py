@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify, session, make_response, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from ..models.user import User, UserRole, Club  # Ajout de l'import Club pour la synchronisation
+from ..models.user import User, UserRole, UserStatus, Club  # Ajout de l'import Club pour la synchronisation
 from ..models.system_settings import SystemSettings
 from ..models.database import db
 from ..services.google_auth_service import verify_google_token, get_google_tokens, get_google_user_info
@@ -426,6 +426,14 @@ def google_authenticate():
             user.google_id = user_info['google_id']
             if not user.name and user_info.get('name'):
                 user.name = user_info['name']
+            
+            # Auto-vérification et activation pour les utilisateurs existants qui lient Google
+            if not user.email_verified:
+                user.email_verified = True
+                user.email_verified_at = datetime.utcnow()
+                user.status = UserStatus.ACTIVE
+                user.email_verification_token = None
+            
             db.session.commit()
         else:
             # Nouvel utilisateur: créer un compte
@@ -436,7 +444,8 @@ def google_authenticate():
                 role=UserRole.PLAYER,
                 credits_balance=SystemSettings.get_welcome_credits(),
                 email_verified=True,  # Auto-vérifier les utilisateurs Google
-                email_verified_at=datetime.utcnow()
+                email_verified_at=datetime.utcnow(),
+                status=UserStatus.ACTIVE  # Auto-activer les utilisateurs Google
             )
             db.session.add(user)
             db.session.commit()
