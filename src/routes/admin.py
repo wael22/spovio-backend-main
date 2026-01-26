@@ -1,9 +1,9 @@
 # padelvar-backend/src/routes/admin.py
 
 from flask import Blueprint, request, jsonify, session
-from src.models.user import db, User, Club, Court, Video, UserRole, ClubActionHistory, RecordingSession, ClubOverlay
+from src.models.user import db, User, Club, Court, Video, UserRole, ClubActionHistory, RecordingSession, ClubOverlay, SharedVideo, UserClip, HighlightJob, HighlightVideo, Transaction, IdempotencyKey
 from src.models.system_configuration import SystemConfiguration, ConfigType
-from src.models.notification import Notification, NotificationType
+from src.models.notification import Notification, NotificationType, SupportMessage
 from werkzeug.security import generate_password_hash
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased, joinedload
@@ -160,10 +160,29 @@ def delete_user(user_id):
         print(f"🗑️ Suppression de l'utilisateur ID: {user_id} - {user.name} ({user.email})")
         
         # 1. Gérer les vidéos associées
+        # D'abord, nettoyer les partages de vidéos impliquant cet utilisateur
+        SharedVideo.query.filter(
+            (SharedVideo.owner_user_id == user_id) | 
+            (SharedVideo.shared_with_user_id == user_id)
+        ).delete(synchronize_session=False)
+        print(f"   🔗 Partages de vidéos supprimés pour l'utilisateur")
+
         videos = Video.query.filter_by(user_id=user_id).all()
         for video in videos:
-            video.user_id = None  # Rendre orpheline plutôt que supprimer
-            print(f"   📹 Vidéo {video.id} rendue orpheline: user_id -> NULL")
+            # Supprimer les partages liés à cette vidéo spécifique
+            SharedVideo.query.filter_by(video_id=video.id).delete(synchronize_session=False)
+            
+            # Supprimer les clips utilisateur liés à cette vidéo
+            UserClip.query.filter_by(video_id=video.id).delete(synchronize_session=False)
+            
+            # Supprimer les jobs de highlights liés à cette vidéo
+            HighlightJob.query.filter_by(video_id=video.id).delete(synchronize_session=False)
+            
+            # Supprimer les vidéos highlights générées liées à cette vidéo
+            HighlightVideo.query.filter_by(original_video_id=video.id).delete(synchronize_session=False)
+            
+            print(f"   📹 Suppression vidéo {video.id} (cascade: shares, clips, highlights)")
+            db.session.delete(video)
         
         # 2. Gérer les sessions d'enregistrement
         recording_sessions = RecordingSession.query.filter_by(user_id=user_id).all()
@@ -197,7 +216,30 @@ def delete_user(user_id):
             user.followed_clubs = []  # Vider la relation
             print(f"   🔗 Relations de suivi supprimées")
         
-        # 7. Supprimer l'utilisateur lui-même
+        # 7. Supprimer les notifications de l'utilisateur
+        Notification.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        print(f"   🔔 Notifications supprimées pour l'utilisateur")
+        
+        # 8. Supprimer les transactions de l'utilisateur
+        Transaction.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        print(f"   💰 Transactions supprimées pour l'utilisateur")
+        
+        # 9. Supprimer les messages de support de l'utilisateur
+        SupportMessage.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        print(f"   📞 Messages support supprimés pour l'utilisateur")
+        
+        # 10. Supprimer les clés d'idempotence
+        IdempotencyKey.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+
+        # 11. Supprimer les clips créés PAR l'utilisateur (sur n'importe quelle vidéo)
+        UserClip.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        print(f"   ✂️ Clips utilisateur supprimés")
+
+        # 12. Supprimer les jobs de highlights demandés PAR l'utilisateur
+        HighlightJob.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        print(f"   ✨ Jobs highlights supprimés")
+
+        # 13. Supprimer l'utilisateur lui-même
         print(f"   👤 Suppression de l'utilisateur: {user.name}")
         db.session.delete(user)
         
