@@ -12,13 +12,20 @@ from email.mime.multipart import MIMEMultipart
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration SMTP (réutilise la config du service de réinitialisation de mot de passe)
-SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
-SMTP_USERNAME = os.environ.get('SMTP_USERNAME', '')
-SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
-SMTP_FROM_EMAIL = os.environ.get('SMTP_FROM_EMAIL', 'noreply@mysmash.tn')
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+# Configuration SMTP (supporte les variables SMTP_ et MAIL_)
+SMTP_SERVER = os.environ.get('SMTP_SERVER') or os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+SMTP_PORT = int(os.environ.get('SMTP_PORT') or os.environ.get('MAIL_PORT', '587'))
+SMTP_USERNAME = os.environ.get('SMTP_USERNAME') or os.environ.get('MAIL_USERNAME', '')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD') or os.environ.get('MAIL_PASSWORD', '')
+SMTP_FROM_EMAIL = os.environ.get('SMTP_FROM_EMAIL') or os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@spovio.net')
+
+# Nettoyage du sender si format "Nom <email>"
+if '<' in SMTP_FROM_EMAIL and '>' in SMTP_FROM_EMAIL:
+    # Extraire l'email si nécessaire, mais smtplib gère souvent bien le format complet
+    pass
+
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://app.spovio.net')
+
 
 # Durée de validité du code de vérification (24 heures par défaut)
 VERIFICATION_CODE_EXPIRY_HOURS = int(os.environ.get('VERIFICATION_CODE_EXPIRY_HOURS', '24'))
@@ -146,9 +153,13 @@ def send_verification_email(email, code, name=None):
         msg.attach(MIMEText(html_body, 'html'))
         
         # Vérifier la configuration SMTP
+        # Vérifier la configuration SMTP
         if not SMTP_USERNAME or not SMTP_PASSWORD:
             logger.warning("⚠️ Configuration SMTP incomplète - Email non envoyé")
-            logger.warning("⚠️ Définissez SMTP_USERNAME et SMTP_PASSWORD dans les variables d'environnement")
+            logger.warning(f"Server: {SMTP_SERVER}:{SMTP_PORT}")
+            logger.warning(f"User: {'Définie' if SMTP_USERNAME else 'Manquante'}")
+            logger.warning(f"Pass: {'Définie' if SMTP_PASSWORD else 'Manquante'}")
+            logger.warning("👉 Configurez MAIL_USERNAME et MAIL_PASSWORD sur Railway")
             
             # En mode développement, afficher simplement le code
             logger.info(f"🔑 CODE DE VÉRIFICATION (DEV ONLY): {code}")
