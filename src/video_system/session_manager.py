@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 from pathlib import Path
 import subprocess
+import threading
 
 from .config import VideoConfig
 from .proxy_manager import ProxyManager
@@ -89,8 +90,17 @@ class SessionManager:
     def __init__(self):
         self.sessions: Dict[str, VideoSession] = {}
         self.proxy_manager = ProxyManager()
+        self._lock = threading.Lock()
         logger.info("🎬 SessionManager initialisé")
     
+    def get_active_session_by_terrain(self, terrain_id: int) -> Optional[VideoSession]:
+        """Vérifier s'il existe déjà une session active pour ce terrain"""
+        with self._lock:
+            for session_id, session in self.sessions.items():
+                if session.terrain_id == terrain_id and session.recording_active:
+                    return session
+        return None
+
     def create_session(
         self,
         terrain_id: int,
@@ -99,20 +109,22 @@ class SessionManager:
         user_id: int
     ) -> VideoSession:
         """
-        Créer une nouvelle session caméra
-        
-        Args:
-            terrain_id: ID du terrain
-            camera_url: URL de la caméra source
-            club_id: ID du club
-            user_id: ID de l'utilisateur
-            
-        Returns:
-            VideoSession créée
+        Créer une nouvelle session caméra (Thread-safe)
         """
+        # 1. Vérifier d'abord s'il y a déjà une session active pour ce terrain
+        existing_session = self.get_active_session_by_terrain(terrain_id)
+        if existing_session:
+            logger.warning(f"⚠️ Session déjà active pour le terrain {terrain_id}: {existing_session.session_id}")
+            # On retourne la session existante ou on lève une erreur?
+            # Pour éviter les doubles enregistrements, on lève une erreur explicite
+            raise RuntimeError(f"Une session est déjà active sur ce terrain ({existing_session.session_id})")
+
         # Générer session ID
         timestamp = int(datetime.now().timestamp())
-        session_id = f"sess_{club_id}_{terrain_id}_{timestamp}"
+        # Ajout d'uuid pour garantir l'unicité même dans la même seconde
+        import uuid
+        unique_suffix = uuid.uuid4().hex[:6]
+        session_id = f"sess_{club_id}_{terrain_id}_{timestamp}_{unique_suffix}"
         
         logger.info(f"📹 Création session {session_id}")
         logger.info(f"   Club: {club_id}, Terrain: {terrain_id}, User: {user_id}")
@@ -151,7 +163,9 @@ class SessionManager:
             verified=True
         )
         
-        self.sessions[session_id] = session
+        with self._lock:
+            self.sessions[session_id] = session
+            
         logger.info(f"✅ Session {session_id} créée avec succès")
         
         return session
@@ -224,8 +238,10 @@ class SessionManager:
         
         # Vérifier que l'enregistrement est arrêté
         if session.recording_active:
-            logger.error(f"❌ Enregistrement encore actif! Impossible de fermer la session.")
-            raise RuntimeError("Recording still active")
+            logger.warning(f"⚠️ Enregistrement encore actif lors de la fermeture ! Force cleanup.")
+            session.recording_active = False 
+            # On continue le nettoyage même si actif pour éviter les zombies
+            # raise RuntimeError("Recording still active") # DISABLED checking to prevent stuck sessions
         
         # Arrêter le proxy
         if session.proxy_port:

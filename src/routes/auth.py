@@ -75,7 +75,7 @@ def register():
         try:
             Notification.create_notification(
                 user_id=new_user.id,
-                notification_type=NotificationType.SYSTEM,
+                notification_type=NotificationType.SYSTEM_MAINTENANCE,
                 title="Bienvenue sur Spovio ! 🎾",
                 message=f"Bonjour {new_user.name}, bienvenue sur la plateforme ! N'oubliez pas de vérifier votre email pour activer toutes les fonctionnalités."
             )
@@ -381,7 +381,15 @@ def change_password():
 @auth_bp.route('/google-auth-url', methods=['GET'])
 def get_google_auth_url():
     """Retourne l'URL pour démarrer le flux d'authentification Google"""
-    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={GOOGLE_CLIENT_ID}&response_type=code&scope=email%20profile&redirect_uri={GOOGLE_REDIRECT_URI}&prompt=select_account"
+    # Fetch runtime config to allow hot-reloading and avoid init issues
+    google_client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+    google_redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI', '').strip()
+    
+    if not google_client_id or not google_redirect_uri:
+        logger.error("❌ Google OAuth misconfigured (Client ID or Redirect URI missing)")
+        return jsonify({'error': 'Configuration Google OAuth manquante'}), 500
+
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={google_client_id}&response_type=code&scope=email%20profile&redirect_uri={google_redirect_uri}&prompt=select_account"
     return jsonify({'auth_url': auth_url}), 200
 
 
@@ -468,7 +476,7 @@ def google_authenticate():
             try:
                 Notification.create_notification(
                     user_id=user.id,
-                    notification_type=NotificationType.SYSTEM,
+                    notification_type=NotificationType.SYSTEM_MAINTENANCE,
                     title="Bienvenue sur Spovio ! 🎾",
                     message=f"Bonjour {user.name}, bienvenue sur Spovio ! Votre compte a été créé avec succès via Google."
                 )

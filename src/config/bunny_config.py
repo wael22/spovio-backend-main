@@ -12,10 +12,10 @@ class BunnyConfig:
     
     # Configuration par défaut (sync avec bunny_storage_service.py L27-29)
     DEFAULT_CONFIG = {
-        'api_key': '4771e914-172d-4abf-aac6e0518b34-44f2-48cd',  # Updated 2026-01-13
-        'library_id': '579861',  # Updated 2026-01-13
-        'cdn_hostname': 'vz-cc4565cd-4e9.b-cdn.net',  # Updated 2026-01-14
-        'storage_zone': 'padel-videos',
+        'api_key': 'ac7bcccc-69bc-47aa-ae8fed1c3364-5693-4e1b',  # Updated 2026-02-01
+        'library_id': '589708',  # Updated 2026-02-01
+        'cdn_hostname': 'vz-9b857324-07d.b-cdn.net',  # Updated 2026-02-01
+        'storage_zone': 'my-smash',
         'timeout': 300,  # 5 minutes
         'max_retries': 3,
         'chunk_size': 8 * 1024 * 1024,  # 8MB

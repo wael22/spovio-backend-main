@@ -95,6 +95,13 @@ class BunnyStatusUpdater:
                         if status == 4:  # Finished
                             video.processing_status = 'ready'
                             
+                            # 🆕 Sync duration from Bunny (actual video length)
+                            real_duration = video_info.get("length")
+                            if real_duration and real_duration > 0:
+                                old_duration = video.duration
+                                video.duration = real_duration
+                                logger.info(f"⏱️ Durée corrigée: {old_duration}s -> {real_duration}s")
+                            
                             # 🆕 Créer une notification pour informer l'utilisateur
                             try:
                                 from src.models.notification import Notification, NotificationType
@@ -144,8 +151,8 @@ def get_bunny_status_updater() -> BunnyStatusUpdater:
     
     if _bunny_status_updater is None:
         import os
-        api_key = os.environ.get('BUNNY_API_KEY', '4771e914-172d-4abf-aac6e0518b34-44f2-48cd')
-        library_id = os.environ.get('BUNNY_LIBRARY_ID', '579861')
+        api_key = os.environ.get('BUNNY_API_KEY', 'ac7bcccc-69bc-47aa-ae8fed1c3364-5693-4e1b')
+        library_id = os.environ.get('BUNNY_LIBRARY_ID', '589708')
         _bunny_status_updater = BunnyStatusUpdater(api_key, library_id)
     
     return _bunny_status_updater

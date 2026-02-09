@@ -340,7 +340,7 @@ def send_test_notification(current_user):
         # Paramètres par défaut
         title = data.get('title', 'Notification de test')
         message = data.get('message', 'Ceci est une notification de test du système MySmash.')
-        notification_type = data.get('type', NotificationType.SYSTEM.value)
+        notification_type = data.get('type', NotificationType.SYSTEM_MAINTENANCE.value)
         
         # Créer la notification directement en DB
         notification = Notification.create_notification(

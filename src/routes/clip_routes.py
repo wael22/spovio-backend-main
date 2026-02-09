@@ -132,6 +132,11 @@ def upload_direct_clip(current_user):
         start_time = request.form.get('start_time', type=float)
         end_time = request.form.get('end_time', type=float)
         
+        logger.info(f"DEBUG UPLOAD: video_id={video_id} (type={type(video_id)})")
+        logger.info(f"DEBUG UPLOAD: title='{title}'")
+        logger.info(f"DEBUG UPLOAD: start_time={start_time} (type={type(start_time)})")
+        logger.info(f"DEBUG UPLOAD: end_time={end_time} (type={type(end_time)})")
+        
         # Validation
         if not all([video_id, title, start_time is not None, end_time is not None]):
             return jsonify({'error': 'Missing required fields'}), 400
@@ -184,7 +189,7 @@ def upload_direct_clip(current_user):
         # Créer une notification pour informer l'utilisateur
         Notification.create_notification(
             user_id=current_user.id,
-            notification_type="VIDEO",  # Uppercase pour matcher l'enum DB
+            notification_type=NotificationType.VIDEO_READY,
             title="🎬 Votre clip est prêt !",
             message=f"Le clip '{clip.title}' a été créé avec succès et est maintenant disponible.",
             link=f"/dashboard?tab=clips"
@@ -211,8 +216,9 @@ def upload_direct_clip(current_user):
     except Exception as e:
         logger.error(f"Error uploading clip: {e}")
         import traceback
-        logger.error(traceback.format_exc())
-        return jsonify({'error': 'Internal server error'}), 500
+        traceback_str = traceback.format_exc()
+        logger.error(traceback_str)
+        return jsonify({'error': 'Internal server error', 'details': str(e), 'trace': traceback_str}), 500
 
 @clip_bp.route('/<int:clip_id>', methods=['GET'])
 @login_required

@@ -57,7 +57,7 @@ def _create_notifications(title: str, message: str, link: str = None):
         for admin in super_admins:
             notification = Notification.create_notification(
                 user_id=admin.id,
-                notification_type=NotificationType.SYSTEM,
+                notification_type=NotificationType.SYSTEM_MAINTENANCE,
                 title=title,
                 message=message,
                 link=link

@@ -35,8 +35,8 @@ def download_video_proxy(video_id, user, video, api_response):
     
     try:
         # Pour Bunny Stream, utiliser l'API pour obtenir l'URL MP4
-        bunny_api_key = os.environ.get('BUNNY_API_KEY')
-        library_id = os.environ.get('BUNNY_LIBRARY_ID', '579861')
+        bunny_api_key = os.environ.get('BUNNY_API_KEY', 'ac7bcccc-69bc-47aa-ae8fed1c3364-5693-4e1b')
+        library_id = os.environ.get('BUNNY_LIBRARY_ID', '589708')
         
         download_url = None
         video_guid = video.bunny_video_id

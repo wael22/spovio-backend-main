@@ -1,9 +1,11 @@
 import subprocess
+import shutil
 import threading
 import time
 import logging
 from pathlib import Path
 import psutil
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +14,23 @@ class DirectVideoCaptureServiceFinal:
     """Service vidéo final - Version avec réinitialisation forcée"""
     
     def __init__(self):
-        self.ffmpeg_path = r"C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe"
+        # Support dynamique pour Windows (Dev) et Linux (Prod/Docker)
+        self.ffmpeg_path = os.getenv('FFMPEG_PATH')
+        if not self.ffmpeg_path:
+            self.ffmpeg_path = shutil.which('ffmpeg')
+        
+        if not self.ffmpeg_path:
+            # Fallback pour le dev local si shutil ne trouve rien mais que le chemin est connu
+            possible_paths = [
+                r"C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe",
+                "ffmpeg"
+            ]
+            for path in possible_paths:
+                if Path(path).exists() or path == "ffmpeg":
+                    self.ffmpeg_path = path
+                    break
+        
+        logger.info(f"🎥 FFmpeg Path configuré: {self.ffmpeg_path}")
         self.camera_url = "http://212.231.225.55:88/axis-cgi/mjpg/video.cgi"
         self.reset_state()
         

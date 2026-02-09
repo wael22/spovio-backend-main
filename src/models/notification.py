@@ -8,12 +8,21 @@ from sqlalchemy import Enum
 import json
 
 class NotificationType(PyEnum):
-    """Types de notifications"""
-    CREDIT = "credit"
-    VIDEO = "video"
-    SYSTEM = "system"
-    INFO = "info"
-    SUPPORT = "support"
+    """Types de notifications - must match PostgreSQL enum"""
+    VIDEO_READY = "VIDEO_READY"
+    RECORDING_STARTED = "RECORDING_STARTED"
+    RECORDING_STOPPED = "RECORDING_STOPPED"
+    CREDITS_ADDED = "CREDITS_ADDED"
+    PAYMENT_SUCCESS = "PAYMENT_SUCCESS"
+    PAYMENT_FAILED = "PAYMENT_FAILED"
+    ACCOUNT_SUSPENDED = "ACCOUNT_SUSPENDED"
+    SESSION_EXPIRED = "SESSION_EXPIRED"
+    SYSTEM_MAINTENANCE = "SYSTEM_MAINTENANCE"
+    
+    # Nouveaux types (à ajouter à l'enum Postgres)
+    VIDEO_SHARED = "VIDEO_SHARED"
+    SUPPORT = "SUPPORT"
+    CREDIT = "CREDIT"  # ✅ Fix: Value found in DB causing crashes
 
 class Notification(db.Model):
     """Modèle pour les notifications utilisateur"""
@@ -21,7 +30,7 @@ class Notification(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    notification_type = db.Column(Enum(NotificationType), nullable=False, default=NotificationType.INFO)
+    notification_type = db.Column(Enum(NotificationType), nullable=False, default=NotificationType.SYSTEM_MAINTENANCE)
     title = db.Column(db.String(200), nullable=False)
     message = db.Column(db.Text, nullable=False)
     is_read = db.Column(db.Boolean, default=False, nullable=False)

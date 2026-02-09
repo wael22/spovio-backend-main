@@ -355,10 +355,10 @@ def get_club_dashboard():
         # 5. Compter les crédits offerts - Amélioration de la méthode
         credits_given = 0
         try:
-            # Récupérer toutes les entrées d'historique de type 'add_credits' pour ce club
-            credit_entries = db.session.query(ClubActionHistory).filter_by(
-                club_id=club.id,
-                action_type='add_credits'
+            # Récupérer toutes les entrées d'historique de type 'add_credits', 'club_add_credits' et 'admin_add_credits' pour ce club
+            credit_entries = db.session.query(ClubActionHistory).filter(
+                ClubActionHistory.club_id == club.id,
+                ClubActionHistory.action_type.in_(['add_credits', 'club_add_credits', 'admin_add_credits'])
             ).all()
             
             print(f"Entrées de crédits trouvées: {len(credit_entries)}")
@@ -743,34 +743,50 @@ def buy_club_credits():
 # Route pour ajouter des crédits à un joueur
 @clubs_bp.route('/<int:player_id>/add-credits', methods=['POST'])
 def add_credits_to_player(player_id):
+    logger.info(f"🎯 [ADD CREDITS] Début - player_id={player_id}")
     user = get_current_user()
     if not user:
+        logger.error("❌ [ADD CREDITS] Utilisateur non authentifié")
         return jsonify({'error': 'Non authentifié'}), 401
     
+    logger.info(f"✅ [ADD CREDITS] User authentifié - ID={user.id}, role={user.role}, club_id={user.club_id}")
+    
     if user.role != UserRole.CLUB:
+        logger.error(f"❌ [ADD CREDITS] Accès refusé - role={user.role}")
         return jsonify({'error': 'Accès réservé aux clubs'}), 403
         
     try:
+        logger.info(f"🔍 [ADD CREDITS] Récupération joueur ID={player_id}")
         # Récupérer le joueur
         player = User.query.get_or_404(player_id)
+        logger.info(f"✅ [ADD CREDITS] Joueur trouvé - name={player.name}, club_id={player.club_id}")
         
         # Vérifier que le joueur est associé au club
         if player.club_id != user.club_id:
+            logger.error(f"❌ [ADD CREDITS] Joueur pas dans le club - player.club_id={player.club_id}, user.club_id={user.club_id}")
             return jsonify({'error': 'Ce joueur n\'est pas associé à votre club'}), 403
         
+        logger.info(f"📦 [ADD CREDITS] R écupération données request")
         data = request.get_json()
         credits = data.get('credits')
+        logger.info(f"💰 [ADD CREDITS] Crédits demandés: {credits}")
         
         if not credits or credits <= 0:
+            logger.error(f"❌ [ADD CREDITS] Montant invalide: {credits}")
             return jsonify({'error': 'Le nombre de crédits doit être un entier positif'}), 400
         
         # Récupérer le club et vérifier son solde
+        logger.info(f"🏢 [ADD CREDITS] Récupération club ID={user.club_id}")
         club = Club.query.get(user.club_id)
         if not club:
+            logger.error(f"❌ [ADD CREDITS] Club non trouvé - club_id={user.club_id}")
             return jsonify({'error': 'Club non trouvé'}), 404
+        
+        logger.info(f"✅ [ADD CREDITS] Club trouvé - name={club.name}, solde={club.credits_balance}")
         
         # Validation : vérifier que le club a assez de crédits
         if club.credits_balance < credits:
+            logger.error(f"❌ [ADD CREDITS] Solde insuffisant - solde={club.credits_balance}, demandé={credits}")
             return jsonify({
                 'error': f'Solde insuffisant. Vous avez {club.credits_balance} crédits, vous essayez d\'en offrir {credits}.',
                 'club_balance': club.credits_balance,
@@ -778,19 +794,22 @@ def add_credits_to_player(player_id):
             }), 400
         
         # Déduire les crédits du club
+        logger.info(f"💸 [ADD CREDITS] Déduction crédits club - ancien={club.credits_balance}, nouveau={club.credits_balance - credits}")
         old_club_balance = club.credits_balance
         club.credits_balance -= credits
         
         # Ajouter les crédits au joueur
+        logger.info(f"✨ [ADD CREDITS] Ajout crédits joueur - ancien={player.credits_balance}, nouveau={player.credits_balance + credits}")
         old_balance = player.credits_balance
         player.credits_balance += credits
         
         # Enregistrer l'action dans l'historique
+        logger.info(f"📝 [ADD CREDITS] Création entrée historique")
         history_entry = ClubActionHistory(
             user_id=player.id,
             club_id=user.club_id,
             performed_by_id=user.id,
-            action_type='add_credits',
+            action_type='club_add_credits',
             action_details=json.dumps({
                 'credits_added': credits,
                 'old_balance': old_balance,
@@ -798,6 +817,7 @@ def add_credits_to_player(player_id):
             })
         )
         
+        logger.info(f"💾 [ADD CREDITS] Ajout à la session DB")
         db.session.add(history_entry)
         
         # Créer une notification pour le joueur
@@ -808,7 +828,7 @@ def add_credits_to_player(player_id):
             
             notification = Notification(
                 user_id=player.id,
-                notification_type=NotificationType.CREDIT,
+                notification_type='CREDITS_ADDED',  # Matches PostgreSQL enum
                 title="🎁 Crédits offerts !",
                 message=f"{club_name} vous a offert {credits} crédits. Nouveau solde : {player.credits_balance} crédits",
                 link="/player"
@@ -818,7 +838,9 @@ def add_credits_to_player(player_id):
         except Exception as notif_error:
             logger.error(f"❌ Erreur création notification pour crédits offerts: {notif_error}")
         
+        logger.info(f"💾 [ADD CREDITS] Commit transaction")
         db.session.commit()
+        logger.info(f"🎉 [ADD CREDITS] Succès! {credits} crédits transférés à {player.name}")
         
         return jsonify({
             'message': f'{credits} crédits transférés avec succès à {player.name}',
@@ -836,8 +858,13 @@ def add_credits_to_player(player_id):
         
     except Exception as e:
         db.session.rollback()
-        print(f"Erreur lors de l'ajout de crédits: {e}")
-        return jsonify({'error': 'Erreur lors de l\'ajout de crédits'}), 500
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"❌❌❌ [ADD CREDITS] ERREUR CRITIQUE ❌❌❌")
+        logger.error(f"Exception: {type(e).__name__}: {str(e)}")
+        logger.error(f"Stack trace:\n{error_trace}")
+        traceback.print_exc()
+        return jsonify({'error': f'Erreur lors de l\'ajout de crédits: {str(e)}'}), 500
 
 # Route pour mettre à jour les informations d'un joueur
 @clubs_bp.route('/<int:player_id>', methods=['PUT'])
@@ -1794,7 +1821,9 @@ def stop_court_recording(court_id):
                     if upload_status and upload_status.get('bunny_video_id'):
                         bunny_id = upload_status['bunny_video_id']
                         new_video.bunny_video_id = bunny_id
-                        new_video.file_url = f"https://vz-cc4565cd-4e9.b-cdn.net/{bunny_id}/playlist.m3u8"
+                        from src.config.bunny_config import BUNNY_CONFIG
+                        cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
+                        new_video.file_url = f"https://{cdn_hostname}/{bunny_id}/playlist.m3u8"
                         db.session.commit()
                         logger.info(f"✅ Bunny video ID saved: {new_video.bunny_video_id}")
                         logger.info(f"✅ Bunny URL updated: {new_video.file_url}")

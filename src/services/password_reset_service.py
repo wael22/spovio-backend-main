@@ -124,8 +124,14 @@ def send_password_reset_email(email, token):
         # Ajouter le corps du message
         msg.attach(MIMEText(html_body, 'html'))
         
-        # Vérifier la configuration SMTP
-        if not SMTP_USERNAME or not SMTP_PASSWORD:
+        # Vérifier la configuration SMTP (récupération runtime)
+        smtp_server = os.environ.get('SMTP_SERVER') or os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+        smtp_port = int(os.environ.get('SMTP_PORT') or os.environ.get('MAIL_PORT', '587'))
+        smtp_user = os.environ.get('SMTP_USERNAME') or os.environ.get('MAIL_USERNAME', '')
+        smtp_pass = os.environ.get('SMTP_PASSWORD') or os.environ.get('MAIL_PASSWORD', '')
+        smtp_from = os.environ.get('SMTP_FROM_EMAIL') or os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@spovio.net')
+
+        if not smtp_user or not smtp_pass:
             logger.error("❌ Configuration SMTP incomplète - Email non envoyé")
             logger.warning("⚠️ Définissez SMTP_USERNAME et SMTP_PASSWORD dans les variables d'environnement")
             
@@ -134,9 +140,14 @@ def send_password_reset_email(email, token):
             return True
         
         # Envoyer l'email
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.login(smtp_user, smtp_pass)
+            
+            # Mise à jour de l'expéditeur dans le message si nécessaire
+            if msg['From'] != smtp_from:
+                 msg.replace_header('From', smtp_from)
+            
             server.send_message(msg)
         
         logger.info(f"✅ Email de réinitialisation envoyé à {email}")

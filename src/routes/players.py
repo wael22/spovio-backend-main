@@ -680,7 +680,7 @@ def buy_credits():
                 
                 Notification.create_notification(
                     user_id=user.id,
-                    notification_type=NotificationType.CREDIT,
+                    notification_type=NotificationType.CREDITS_ADDED,
                     title="Crédits ajoutés !",
                     message=f"{credits_amount} crédits ont été ajoutés à votre compte",
                     link="/player"

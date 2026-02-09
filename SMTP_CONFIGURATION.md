@@ -20,9 +20,9 @@ Pour activer l'envoi d'emails de vérification, configurez votre serveur SMTP en
 # SMTP Configuration (Gmail)
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USERNAME=votre.email@gmail.com
-SMTP_PASSWORD=xxxx xxxx xxxx xxxx
-SMTP_FROM_EMAIL=votre.email@gmail.com
+SMTP_USERNAME=mysmashpadel@gmail.com
+SMTP_PASSWORD=fssecphvikhkkbds
+SMTP_FROM_EMAIL=mysmashpadel@gmail.com
 
 # Frontend URL
 FRONTEND_URL=http://localhost:5173

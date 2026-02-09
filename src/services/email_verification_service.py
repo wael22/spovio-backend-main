@@ -66,9 +66,17 @@ def send_verification_email(email, code, name=None):
     try:
         logger.info(f"📧 Envoi d'un email de vérification à {email}")
         
+        # Récupérer les identifiants directement de l'environnement
+        smtp_server = os.environ.get('SMTP_SERVER') or os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+        smtp_port = int(os.environ.get('SMTP_PORT') or os.environ.get('MAIL_PORT', '587'))
+        
+        smtp_user = os.environ.get('SMTP_USERNAME') or os.environ.get('MAIL_USERNAME', '')
+        smtp_pass = os.environ.get('SMTP_PASSWORD') or os.environ.get('MAIL_PASSWORD', '')
+        smtp_from = os.environ.get('SMTP_FROM_EMAIL') or os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@spovio.net')
+        
         # Créer le message
         msg = MIMEMultipart()
-        msg['From'] = SMTP_FROM_EMAIL
+        msg['From'] = smtp_from
         msg['To'] = email
         msg['Subject'] = "Spovio - Vérifiez votre adresse email"
         
@@ -153,23 +161,14 @@ def send_verification_email(email, code, name=None):
         msg.attach(MIMEText(html_body, 'html'))
         
         # Vérifier la configuration SMTP
-        # Vérifier la configuration SMTP
-        if not SMTP_USERNAME or not SMTP_PASSWORD:
+        if not smtp_user or not smtp_pass:
             logger.warning("⚠️ Configuration SMTP incomplète - Email non envoyé")
-            logger.warning(f"Server: {SMTP_SERVER}:{SMTP_PORT}")
-            logger.warning(f"User: {'Définie' if SMTP_USERNAME else 'Manquante'}")
-            logger.warning(f"Pass: {'Définie' if SMTP_PASSWORD else 'Manquante'}")
-            logger.warning("👉 Configurez MAIL_USERNAME et MAIL_PASSWORD sur Railway")
-            
-            # En mode développement, afficher simplement le code
-            logger.info(f"🔑 CODE DE VÉRIFICATION (DEV ONLY): {code}")
-            logger.info(f"📧 Email destinataire: {email}")
             return True
         
         # Envoyer l'email
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.login(smtp_user, smtp_pass)
             server.send_message(msg)
         
         logger.info(f"✅ Email de vérification envoyé à {email}")

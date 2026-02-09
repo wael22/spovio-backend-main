@@ -48,6 +48,7 @@ from .routes.system_settings_routes import system_settings_bp  # 🆕 System set
 from .routes.clip_routes import clip_bp  # 🆕 Manual clip creation and social sharing
 from .routes.public_clip_routes import public_clip_bp  # 🆕 Public clip sharing (no auth required)
 from .routes.tutorial_routes import tutorial_bp  # 🆕 Tutorial system for new players
+from .routes.player_interests import player_interests_bp  # 🆕 Player interests dashboard
 
 def create_app(config_name=None):
     """
@@ -99,9 +100,10 @@ def create_app(config_name=None):
     migrate = Migrate(app, db)
     jwt = JWTManager(app)
     
-    # 🍪 Configuration des cookies de session pour cross-origin (Vercel → Railway)
-    app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Permet les cookies cross-origin
-    app.config['SESSION_COOKIE_SECURE'] = True      # Requis avec SameSite=None (HTTPS uniquement)
+    # 🍪 Configuration des cookies de session pour OVH (HTTP temporaire)
+    # Pour HTTP (IPV4 access), il faut SameSite='Lax' et Secure=False
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'   # Permet le fonctionnement en HTTP
+    app.config['SESSION_COOKIE_SECURE'] = False     # Désactivé pour HTTP
     app.config['SESSION_COOKIE_HTTPONLY'] = True    # Sécurité: empêche l'accès JS
     app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 jours
     
@@ -138,6 +140,12 @@ def create_app(config_name=None):
         # Allow localhost for development
         if origin.startswith('http://localhost:'):
             return True
+            
+        # Allow OVH IP
+        if origin.startswith('http://213.32.23.209'):
+            return True
+            
+        return False
         
         return False
     
@@ -223,6 +231,7 @@ def create_app(config_name=None):
     app.register_blueprint(clip_bp)  # 🆕 Manual clips (prefix in blueprint)
     app.register_blueprint(public_clip_bp)  # 🆕 Public clip sharing (no auth, root level)
     app.register_blueprint(tutorial_bp, url_prefix='/api/tutorial')  # 🆕 Tutorial system
+    app.register_blueprint(player_interests_bp, url_prefix='/api')  # 🆕 Player interests
     app.register_blueprint(password_reset_bp)
     # Frontend blueprint en dernier pour éviter d'intercepter les routes API
     app.register_blueprint(frontend_bp)
@@ -312,7 +321,13 @@ def create_app(config_name=None):
     elif config_name == 'production':
         # En production, s'assurer que le monitoring est actif
         with app.app_context():
-            _init_periodic_monitoring(app)
+            # Temporarily disabled to isolate startup issues
+            # _init_periodic_monitoring(app)
+            pass
+    
+    
+    # Démarrer le scheduler de nettoyage et le service Bunny
+    _init_recording_scheduler(app)
     
     return app
 
@@ -388,6 +403,7 @@ def create_admin(app, email, password, name="Admin"):
         print(f"✅ Administrateur créé: {email}")
         return True
 
+
 def _init_periodic_monitoring(app):
     """
     Initialise le monitoring périodique du système
@@ -409,41 +425,6 @@ def _init_periodic_monitoring(app):
     except Exception as e:
         print(f"⚠️  Erreur lors de l'initialisation du monitoring: {e}")
 
-    # ===== INTÉGRATION API CAMÉRA OPTIMISÉE =====
-    
-    # Routes caméra optimisées pour Axis IP
-    from src.routes.camera_api import camera_bp
-    app.register_blueprint(camera_bp, url_prefix='/api/camera')
-    
-    # Test rapide de la caméra Axis au démarrage
-    @app.route('/api/test-axis-camera', methods=['GET'])
-    def test_axis_camera():
-        """Test rapide de votre caméra Axis"""
-        try:
-            from src.services.camera_capture_service import camera_capture
-            from datetime import datetime
-            
-            axis_camera_url = "http://212.231.225.55:88/axis-cgi/mjpg/video.cgi"
-            success, message = camera_capture.test_camera_connection(
-                axis_camera_url, timeout=15
-            )
-            
-            return jsonify({
-                'camera_url': axis_camera_url,
-                'success': success,
-                'message': message,
-                'timestamp': datetime.now().isoformat()
-            }), 200
-            
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-    
-    # ===== FIN INTÉGRATION API CAMÉRA =====
-
-    # Démarrer le scheduler de nettoyage des enregistrements
-    _init_recording_scheduler(app)
-    
-    return app
 
 def _init_recording_scheduler(app):
     """

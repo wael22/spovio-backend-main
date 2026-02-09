@@ -27,7 +27,7 @@ class BunnyMP4UrlHelper:
         """Initialiser avec le hostname CDN depuis les variables d'environnement"""
         from src.config.bunny_config import BunnyConfig
         bunny_config = BunnyConfig.load_config()
-        self.cdn_hostname = bunny_config.get('cdn_hostname', 'vz-cc4565cd-4e9.b-cdn.net')
+        self.cdn_hostname = bunny_config.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
         logger.info(f"🔧 BunnyMP4UrlHelper initialisé avec hostname: {self.cdn_hostname}")
     
     def get_mp4_download_url(self, bunny_video_id: str, resolution: str = None) -> str:

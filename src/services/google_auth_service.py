@@ -43,22 +43,22 @@ from google.auth.transport import requests as google_requests
 def verify_google_token(token):
     """Vérifie un token Google et retourne les infos utilisateur"""
     try:
-        if GOOGLE_CLIENT_ID == 'YOUR_GOOGLE_CLIENT_ID':
+        # Runtime config fetch
+        google_client_id = os.environ.get('GOOGLE_CLIENT_ID')
+        
+        if not google_client_id or google_client_id == 'YOUR_GOOGLE_CLIENT_ID':
             logger.error("❌ GOOGLE_CLIENT_ID non configuré - Impossible de vérifier le token")
             return None
             
         logger.info(f"🔍 Tentative de vérification du token Google...")
         
         # Utiliser la librairie officielle Google pour la vérification
-        # Cela gère automatiquement les clés publiques, le cache, et la validation
         id_info = id_token.verify_oauth2_token(
             token, 
             google_requests.Request(), 
-            GOOGLE_CLIENT_ID
+            google_client_id
         )
 
-        # Si on arrive ici, le token est valide
-        # Retourner les informations d'utilisateur
         return {
             'email': id_info['email'],
             'name': id_info.get('name', ''),
@@ -68,7 +68,6 @@ def verify_google_token(token):
         }
         
     except ValueError as e:
-        # Token invalide
         logger.error(f"❌ Erreur de vérification du token Google: {e}")
         return None
     except Exception as e:
@@ -79,13 +78,13 @@ def verify_google_token(token):
 def get_google_user_info(access_token):
     """Récupère les informations de l'utilisateur Google via l'API"""
     try:
-        logger.info(f"🔍 Récupération des informations utilisateur Google...")
+        # logger.info(f"🔍 Récupération des informations utilisateur Google...") # Reduce noise
         userinfo_endpoint = "https://www.googleapis.com/oauth2/v3/userinfo"
         headers = {'Authorization': f'Bearer {access_token}'}
         
         response = requests.get(userinfo_endpoint, headers=headers)
         if response.status_code == 200:
-            logger.info("✅ Informations utilisateur Google récupérées avec succès")
+            # logger.info("✅ Informations utilisateur Google récupérées avec succès")
             return response.json()
         else:
             logger.error(f"❌ Erreur lors de la récupération des infos utilisateur: {response.status_code} - {response.text}")
@@ -98,29 +97,34 @@ def get_google_user_info(access_token):
 def get_google_tokens(code):
     """Échange le code d'autorisation contre des tokens"""
     try:
-        if GOOGLE_CLIENT_ID == 'YOUR_GOOGLE_CLIENT_ID' or GOOGLE_CLIENT_SECRET == 'YOUR_GOOGLE_CLIENT_SECRET':
+        # Runtime config fetch
+        google_client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+        google_client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
+        google_redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI', '').strip()
+
+        if not google_client_id or not google_client_secret:
             logger.error("❌ Google OAuth non configuré - ID client ou secret manquant")
             return None
             
-        logger.info(f"🔄 Échange du code d'autorisation contre des tokens...")
+        logger.info(f"🔄 Échange du code contre tokens (URI: {google_redirect_uri})...")
         token_endpoint = "https://oauth2.googleapis.com/token"
         
         data = {
             'code': code,
-            'client_id': GOOGLE_CLIENT_ID,
-            'client_secret': GOOGLE_CLIENT_SECRET,
-            'redirect_uri': GOOGLE_REDIRECT_URI,
+            'client_id': google_client_id,
+            'client_secret': google_client_secret,
+            'redirect_uri': google_redirect_uri,
             'grant_type': 'authorization_code'
         }
-        
-        logger.debug(f"📤 Paramètres de requête token: client_id={GOOGLE_CLIENT_ID}, redirect_uri={GOOGLE_REDIRECT_URI}")
         
         response = requests.post(token_endpoint, data=data)
         if response.status_code == 200:
             logger.info("✅ Tokens Google obtenus avec succès")
             return response.json()
         else:
-            logger.error(f"❌ Erreur lors de l'échange du code: {response.status_code} - {response.text}")
+            logger.error(f"❌ Erreur échange code Google: {response.status_code}")
+            logger.error(f"   Réponse: {response.text}")
+            logger.warning(f"   Config utilisée: ID={google_client_id[:10]}..., URI={google_redirect_uri}")
             return None
             
     except Exception as e:

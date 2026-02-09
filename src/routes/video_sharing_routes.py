@@ -233,7 +233,7 @@ def share_video_with_user(video_id):
                 user_id=recipient.id,
                 title='Nouvelle vidéo partagée',
                 message=f'{current_user.name} a partagé une vidéo avec vous: "{video.title}"',
-                notification_type=NotificationType.VIDEO,
+                notification_type=NotificationType.VIDEO_SHARED,
                 link=None
             )
             db.session.add(notification)

@@ -17,8 +17,8 @@ class BunnyDeletionService:
     
     def __init__(self):
         """Initialise le service de suppression Bunny Stream"""
-        self.api_key = os.environ.get('BUNNY_API_KEY', '4771e914-172d-4abf-aac6e0518b34-44f2-48cd')
-        self.library_id = os.environ.get('BUNNY_LIBRARY_ID', '579861')
+        self.api_key = os.environ.get('BUNNY_API_KEY', 'ac7bcccc-69bc-47aa-ae8fed1c3364-5693-4e1b')
+        self.library_id = os.environ.get('BUNNY_LIBRARY_ID', '589708')
         
         # URLs API
         self.api_base_url = f"https://video.bunnycdn.com/library/{self.library_id}"

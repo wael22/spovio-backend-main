@@ -21,14 +21,15 @@ if env_file.exists():
                 key, value = line.split('=', 1)
                 os.environ.setdefault(key.strip(), value.strip())
 
-# Import the Flask application factory
+# Import the Flask application factory (FULL VERSION)
 from src.main import create_app
 
 # Create the application instance
 env = os.environ.get('FLASK_ENV', 'production')
+print(f"🔧 Creating app in FULL mode (env={env})")
 app = create_app(env)
 
-# FORCE database initialization (temporary - for Railway)
+# FORCE database initialization (temporary - for Railway/VPS)
 print("🔄 Forcing database initialization...")
 try:
     from src.models.database import db

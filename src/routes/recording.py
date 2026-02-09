@@ -288,7 +288,16 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
         # Mettre à jour la session
         recording_session.status = 'stopped'
         recording_session.stopped_by = stopped_by
-        recording_session.end_time = datetime.utcnow()
+        
+        # ✅ CORRECTION DURÉE: Si arrêté automatiquement (expiration), on force la durée prévue
+        # car cela signifie souvent que le serveur a redémarré après l'heure de fin prévue.
+        if stopped_by == 'auto' and recording_session.is_expired():
+            # Calculer la fin théorique
+            theoretical_end = recording_session.start_time + timedelta(minutes=recording_session.planned_duration)
+            recording_session.end_time = theoretical_end
+            logger.info(f"🔄 Correction durée (Auto-Expire): Fin ajustée à {theoretical_end} (Durée: {recording_session.planned_duration}m)")
+        else:
+            recording_session.end_time = datetime.utcnow()
         
         
         # 🔧 LIBÉRER LE TERRAIN
@@ -313,6 +322,25 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
         logger.info(f"🎯 DURÉE FINALE RETENUE:")
         logger.info(f"   💾 Stockage en DB: {final_duration:.0f} secondes = {final_duration/60:.2f} minutes")
         # Source: Calcul DB (temps start → end)
+
+        # 🛑 NETTOYAGE SYSTÈME VIDÉO (V3)
+        # 🛑 NETTOYAGE SYSTÈME VIDÉO (V3)
+        try:
+            from src.video_system.recording import video_recorder
+            from src.video_system.session_manager import session_manager
+            
+            # 1. Arrêter le processus FFmpeg (ce qui libère le flag recording_active)
+            logger.info(f"🛑 Arrêt du système vidéo pour {recording_session.recording_id}")
+            # Note: recording_session.recording_id == session_id dans la V3
+            video_recorder.stop_recording(recording_session.recording_id)
+            
+            # 2. Fermer la session (arrêt proxy, cleanup mémoire)
+            session_manager.close_session(recording_session.recording_id)
+            logger.info(f"✅ Session système fermée: {recording_session.recording_id}")
+            
+        except Exception as v3_err:
+            logger.warning(f"⚠️ Erreur lors du nettoyage V3 (non critique): {v3_err}")
+            # On continue, ce n'est pas bloquant pour la sauvegarde BDD
         
         video = Video(
             user_id=recording_session.user_id,
@@ -337,7 +365,13 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
             for video_path in possible_paths:
                 if os.path.exists(video_path):
                     file_size = os.path.getsize(video_path)
-                    video.file_size = file_size
+                    # Check for Integer overflow (Postgres Integer is max 2147483647)
+                    if file_size < 2147483647:
+                        video.file_size = file_size
+                    else:
+                        logger.warning(f"⚠️ File size {file_size} exceeds Integer limit, setting to None")
+                        video.file_size = None
+                    
                     logger.info(f"📦 Taille fichier vidéo: {file_size / (1024*1024):.2f} MB")
                     break
         except Exception as e:
@@ -407,7 +441,9 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
                     bunny_id = upload_status['bunny_video_id']
                     video.bunny_video_id = bunny_id
                     # ✅ CORRECTION: Mettre à jour file_url avec l'URL Bunny CDN complète
-                    video.file_url = f"https://vz-cc4565cd-4e9.b-cdn.net/{bunny_id}/playlist.m3u8"
+                    from src.config.bunny_config import BUNNY_CONFIG
+                    cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
+                    video.file_url = f"https://{cdn_hostname}/{bunny_id}/playlist.m3u8"
                     # 🆕 Mettre à jour le statut selon le statut Bunny
                     bunny_status = upload_status.get('status', 'pending')
                     if bunny_status == 'completed':
@@ -703,6 +739,52 @@ def start_recording_v3():
         if not court.camera_url:
             return jsonify({'error': f'Caméra non configurée pour le terrain {court_id}'}), 400
         
+        # 🧹 Nettoyage préventif des sessions expirées
+        cleanup_expired_sessions(court.club_id)
+
+        # 🔒 Check if court already has active recording in DB
+        existing_recording = RecordingSession.query.filter_by(
+            court_id=court_id,
+            status='active'
+        ).first()
+
+        if existing_recording:
+            # Check if it's expired OR if it's a "zombie"
+            # Une session est zombie si:
+            # 1. Elle n'est PAS dans session_manager (serveur redémarré)
+            # 2. OU Elle est dans session_manager MAIS recording_active est Faux (arrêt planté/timeout)
+            
+            is_zombie = existing_recording.recording_id not in session_manager.sessions
+            if not is_zombie:
+                 # Check memory status
+                 mem_session = session_manager.sessions.get(existing_recording.recording_id)
+                 if mem_session and not mem_session.recording_active:
+                     is_zombie = True
+                     logger.info(f"🧟 Session {existing_recording.recording_id} trouvée en mémoire mais INACTIVE -> Zombie cleanable")
+
+            if existing_recording.is_expired() or is_zombie:
+                reason = "expirée" if (existing_recording.is_expired() and not is_zombie) else "zombie/bug"
+                logger.info(f"Session {reason} trouvée {existing_recording.recording_id}, nettoyage immédiat...")
+                try:
+                    # Pour un zombie pur (pas en RAM), on force le statut DB
+                    if existing_recording.recording_id not in session_manager.sessions:
+                         existing_recording.status = 'stopped'
+                         existing_recording.end_time = datetime.now()
+                         db.session.commit()
+                         logger.info("✅ Session zombie (RAM missing) nettoyée en BDD")
+                    else:
+                        # Si elle est en RAM (même inactive), on tente un cleanup propre
+                        _stop_recording_session(existing_recording, 'auto', user.id)
+                        logger.info("✅ Session expirée/inactive nettoyée avec succès via stop_recording")
+                except Exception as e:
+                    logger.error(f"⚠️ Erreur nettoyage session {reason}: {e}")
+            else:
+                 return jsonify({
+                     'success': False,
+                     'error': f'Une session est déjà active sur ce terrain ({existing_recording.recording_id})',
+                     'existing_recording_id': existing_recording.recording_id
+                 }), 409
+        
         logger.info(f"🎬 V3 Adapter: Nouvelle demande d'enregistrement - Terrain {court_id}, Durée: {duration_minutes} min")
         
         # 💳 VÉRIFIER LES CRÉDITS AVANT DE DÉMARRER
@@ -721,6 +803,12 @@ def start_recording_v3():
                 user_id=user.id
             )
             logger.info(f"✅ Session créée: {session.session_id}")
+        except RuntimeError as e:
+            # Conflict detected by SessionManager
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 409
         except Exception as e:
             logger.error(f"❌ Erreur création session: {e}", exc_info=True)
             return jsonify({
@@ -743,8 +831,6 @@ def start_recording_v3():
                 }), 500
             
             # 3. 🆕 Mettre à jour l'état du terrain dans la DB
-            from src.models.database import db
-            from src.models.user import RecordingSession
             from datetime import datetime
             
             try:

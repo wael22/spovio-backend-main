@@ -111,11 +111,26 @@ class VideoRecorder:
                 
                 # Préparer les chemins des overlays
                 for overlay in overlays:
+                    # ❌ SKIP blob URLs - they don't exist on server
+                    if overlay.image_url.startswith('blob:'):
+                        logger.warning(f"  ⚠️ Skipping invalid blob URL overlay: {overlay.name} - {overlay.image_url}")
+                        continue
+                    
+                    # ❌ SKIP URLs without proper prefix
+                    if not overlay.image_url.startswith('/static/') and not overlay.image_url.startswith('C:') and not overlay.image_url.startswith('/'):
+                        logger.warning(f"  ⚠️ Skipping invalid overlay URL: {overlay.name} - {overlay.image_url}")
+                        continue
+                    
                     # Convertir l'URL relative en chemin absolu
                     if overlay.image_url.startswith('/static/'):
                         # Enlever /static/ et construire le chemin absolu
+                        # __file__ = .../spovio-backend-main/src/video_system/recording.py
+                        # parent = .../spovio-backend-main/src/video_system
+                        # parent.parent = .../spovio-backend-main/src
+                        # parent.parent.parent = .../spovio-backend-main (PROJECT ROOT)
                         rel_path = overlay.image_url.replace('/static/', '')
-                        abs_path = Path(__file__).parent.parent / 'static' / rel_path
+                        project_root = Path(__file__).parent.parent.parent
+                        abs_path = project_root / 'static' / rel_path
                     else:
                         abs_path = Path(overlay.image_url)
                     
@@ -255,7 +270,8 @@ class VideoRecorder:
                 'output_path': output_path,
                 'start_time': datetime.now(),
                 'duration_seconds': duration_seconds,
-                'pid': process.pid
+                'pid': process.pid,
+                'session': session
             }
             
             session.recording_process = process
@@ -310,6 +326,11 @@ class VideoRecorder:
             except: pass
             
         finally:
+            # ✅ Important: Mettre à jour le statut de la session
+            if info.get('session'):
+                info['session'].recording_active = False
+                logger.info(f"✅ Session {session_id} marquée comme inactive")
+
             if session_id in self.active_recordings:
                 del self.active_recordings[session_id]
                 

@@ -22,8 +22,8 @@ class MJPEGRecordingConfig:
     
     def __init__(self):
         # Configuration Bunny Stream
-        self.bunny_api_key = os.getenv('BUNNY_API_KEY', '4771e914-172d-4abf-aac6e0518b34-44f2-48cd')  # Updated 2026-01-13
-        self.bunny_library_id = os.getenv('BUNNY_LIBRARY_ID', '579861')  # Updated 2026-01-13
+        self.bunny_api_key = os.getenv('BUNNY_API_KEY', 'ac7bcccc-69bc-47aa-ae8fed1c3364-5693-4e1b')  # Updated 2026-02-01
+        self.bunny_library_id = os.getenv('BUNNY_LIBRARY_ID', '589708')  # Updated 2026-02-01
         self.bunny_base_url = 'https://video.bunnycdn.com'
         
         # Configuration FFmpeg

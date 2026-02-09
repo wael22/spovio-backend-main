@@ -49,6 +49,18 @@ class ManualClipService:
         
         api_key_len = len(fallback_config.get('api_key', ''))
         logger.info(f"✅ Using Bunny config from BunnyConfig fallback (api_key length: {api_key_len})")
+        
+        # 🆕 Auto-correction: Si la config DB est mauvaise ou manquante, on la met à jour
+        try:
+            from src.models.system_configuration import SystemConfiguration
+            db_hostname = SystemConfiguration.get_config('bunny_cdn_hostname')
+            correct_hostname = fallback_config.get('cdn_hostname')
+            if db_hostname != correct_hostname:
+                logger.info(f"🔧 Auto-correcting DB CDN hostname: {db_hostname} -> {correct_hostname}")
+                SystemConfiguration.set_bunny_cdn_config(cdn_hostname=correct_hostname)
+        except Exception as e:
+            logger.warning(f"Could not auto-correct Bunny config: {e}")
+            
         return fallback_config
     
     def create_clip(

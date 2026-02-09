@@ -13,6 +13,7 @@ import json
 import random
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -275,7 +276,7 @@ def add_credits(user_id):
         log_club_action(
             user_id=user.id, 
             club_id=user.club_id,
-            action_type='add_credits', 
+            action_type='admin_add_credits', 
             details={'credits_added': credits_to_add, 'old_balance': old_balance, 'new_balance': user.credits_balance}, 
             performed_by_id=session.get('user_id')
         )
@@ -284,7 +285,7 @@ def add_credits(user_id):
         try:
             notification = Notification(
                 user_id=user.id,
-                notification_type=NotificationType.CREDIT,
+                notification_type=NotificationType.CREDITS_ADDED,
                 title="🎁 Crédits offerts !",
                 message=f"L'administrateur vous a offert {credits_to_add} crédits. Nouveau solde : {user.credits_balance} crédits",
                 link="/player"
@@ -340,7 +341,7 @@ def add_credits_to_club(club_id):
             try:
                 notification = Notification(
                     user_id=club_user.id,
-                    notification_type=NotificationType.CREDIT,
+                    notification_type=NotificationType.CREDITS_ADDED,
                     title="🎁 Crédits offerts !",
                     message=f"L'administrateur a offert {credits_to_add} crédits à votre club. Nouveau solde : {club.credits_balance} crédits",
                     link="/club"
@@ -502,6 +503,27 @@ def update_club(club_id):
             club.phone_number = data["phone_number"]
         if "email" in data: 
             club.email = data["email"].strip()
+        if "credits_balance" in data:
+            try:
+                new_balance = int(data["credits_balance"])
+                if new_balance >= 0:
+                    old_balance = club.credits_balance
+                    club.credits_balance = new_balance
+                    # Log credit adjustment
+                    if old_balance != new_balance:
+                         log_club_action(
+                            user_id=club_user.id if club_user else None,
+                            club_id=club_id,
+                            action_type='admin_set_credits', 
+                            details={
+                                'old_balance': old_balance, 
+                                'new_balance': new_balance,
+                                'diff': new_balance - old_balance
+                            }, 
+                            performed_by_id=session.get('user_id')
+                        )
+            except (ValueError, TypeError):
+                pass  # Ignore invalid credit values
         
         # SYNCHRONISATION BIDIRECTIONNELLE: Mettre à jour l'utilisateur associé
         if club_user:
@@ -890,7 +912,9 @@ def admin_stop_recording(recording_id):
                 if upload_status and upload_status.get('bunny_video_id'):
                     new_video.bunny_video_id = upload_status['bunny_video_id']
                     # ✨ NEW: Also update file_url to Bunny CDN URL
-                    new_video.file_url = f"https://vz-cc4565cd-4e9.b-cdn.net/{new_video.bunny_video_id}/playlist.m3u8"
+                    from src.config.bunny_config import BUNNY_CONFIG
+                    cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
+                    new_video.file_url = f"https://{cdn_hostname}/{new_video.bunny_video_id}/playlist.m3u8"
                     logger.info(f"✅ Bunny video ID saved: {new_video.bunny_video_id}")
                     logger.info(f"✅ Bunny URL updated: {new_video.file_url}")
                 else:
@@ -1096,20 +1120,27 @@ def get_all_clubs_history():
         Performer = aliased(User, name='performer')
 
         # Requête unique avec des jointures externes (outerjoin) pour plus de robustesse
-        history_query = (
-            db.session.query(
-                ClubActionHistory,
-                Player.name.label('player_name'),
-                Club.name.label('club_name'),
-                Performer.name.label('performed_by_name')
-            )
-            .outerjoin(Player, ClubActionHistory.user_id == Player.id)
-            .outerjoin(Performer, ClubActionHistory.performed_by_id == Performer.id)
-            .outerjoin(Club, ClubActionHistory.club_id == Club.id)
-            .order_by(ClubActionHistory.performed_at.desc())
-            .limit(100)  # Limiter à 100 entrées pour les performances
+        query = db.session.query(
+            ClubActionHistory,
+            Player.name.label('player_name'),
+            Club.name.label('club_name'),
+            Performer.name.label('performed_by_name')
+        ).outerjoin(Player, ClubActionHistory.user_id == Player.id)\
+         .outerjoin(Performer, ClubActionHistory.performed_by_id == Performer.id)\
+         .outerjoin(Club, ClubActionHistory.club_id == Club.id)
+
+        # Filtrer par club si demandé
+        club_id = request.args.get('club_id')
+        if club_id:
+            try:
+                club_id_int = int(club_id)
+                query = query.filter(ClubActionHistory.club_id == club_id_int)
+            except ValueError:
+                pass  # Ignorer si l'ID n'est pas valide
+        
+        history_query = query.order_by(ClubActionHistory.performed_at.desc())\
+            .limit(100)\
             .all()
-        )
 
         history_data = []
         for entry, player_name, club_name, performed_by_name in history_query:
@@ -1151,10 +1182,11 @@ def get_all_clubs_history():
 def create_action_summary(action_type, details):
     """Crée un résumé lisible de l'action"""
     try:
-        if 'crédits' in action_type.lower():
-            if 'achat' in action_type.lower():
+        action_type_lower = action_type.lower()
+        if 'crédit' in action_type_lower or 'credit' in action_type_lower:
+            if 'achat' in action_type_lower or 'buy' in action_type_lower:
                 # Pour les achats de crédits
-                credits = details.get('credits_purchased') or details.get('credits_amount') or details.get('credits_involved', 'N/A')
+                credits = details.get('credits_purchased') or details.get('credits_amount') or details.get('credits_involved') or details.get('credits', 'N/A')
                 price = details.get('price_dt') or details.get('price_paid_dt')
                 payment_method = details.get('payment_method', '')
                 
@@ -1165,8 +1197,8 @@ def create_action_summary(action_type, details):
                 else:
                     return f"{action_type} - {credits} crédit(s)"
             else:
-                # Pour les ajouts de crédits (par admin)
-                credits = details.get('credits_added') or details.get('credits_purchased') or details.get('credits_involved', 'N/A')
+                # Pour les ajouts de crédits (par admin) ou réceptions
+                credits = details.get('credits_added') or details.get('credits_received') or details.get('credits_purchased') or details.get('credits_involved') or details.get('credits', 'N/A')
                 return f"{action_type} - {credits} crédit(s)"
         elif 'suivi' in action_type.lower():
             club_name = details.get('club_name', 'Club inconnu')
@@ -2644,6 +2676,50 @@ def delete_club_overlay(club_id, overlay_id):
         db.session.rollback()
         return jsonify({"error": "Erreur lors de la suppression"}), 500
 
+@admin_bp.route("/clubs/<int:club_id>/overlays/upload", methods=["POST"])
+def upload_overlay_image(club_id):
+    """Upload overlay image and return permanent URL"""
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+    
+    club = Club.query.get_or_404(club_id)
+    
+    if 'file' not in request.files:
+        return jsonify({"error": "Aucun fichier fourni"}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({"error": "Nom de fichier vide"}), 400
+    
+    # Validate file type
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({"error": f"Format non autorisé. Utilisez: {', '.join(allowed_extensions)}"}), 400
+    
+    try:
+        # Generate unique filename
+        unique_filename = f"overlay_{club_id}_{uuid.uuid4().hex[:8]}.{ext}"
+        upload_folder = Path(__file__).parent.parent.parent / "static" / "overlays"
+        upload_folder.mkdir(parents=True, exist_ok=True)
+        
+        file_path = upload_folder / unique_filename
+        file.save(str(file_path))
+        
+        # Return URL that will be accessible via /static/overlays/...
+        image_url = f"/static/overlays/{unique_filename}"
+       
+        logger.info(f"✅ Overlay image uploaded: {image_url}")
+        return jsonify({
+            "message": "Image uploadée",
+            "image_url": image_url
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error uploading overlay: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 # --- VIDEO DELETION (SUPER ADMIN ONLY) ---
 
@@ -3072,7 +3148,7 @@ def update_bunny_url(video_id):
             # Construire l'URL à partir du bunny_video_id si non fournie
             # Format: https://vz-{library_id}.b-cdn.net/{video_id}/playlist.m3u8
             from src.config.bunny_config import BUNNY_CONFIG
-            cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-cc4565cd-4e9.b-cdn.net')
+            cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
             video.file_url = f"https://{cdn_hostname}/{bunny_video_id}/playlist.m3u8"
         
         # Mettre à jour le statut
@@ -3162,7 +3238,7 @@ def create_manual_video():
         # Générer l'URL si non fournie
         if not bunny_url:
             from src.config.bunny_config import BUNNY_CONFIG
-            cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-cc4565cd-4e9.b-cdn.net')
+            cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
             bunny_url = f"https://{cdn_hostname}/{bunny_video_id}/playlist.m3u8"
         
         # Si durée non fournie, essayer de la récupérer depuis Bunny API
@@ -3223,3 +3299,50 @@ def create_manual_video():
         logger.error(f"❌ Erreur création vidéo manuelle: {e}")
         return jsonify({"error": f"Erreur: {str(e)}"}), 500
 
+
+@admin_bp.route("/clubs/<int:club_id>/history", methods=["GET"])
+def get_club_history_admin(club_id):
+    """Récupérer l'historique d'un club (admin uniquement)"""
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+    
+    club = Club.query.get_or_404(club_id)
+    
+    try:
+        # On définit des alias pour les tables User afin de différencier les utilisateurs dans la requête
+        Player = aliased(User)
+        Performer = aliased(User)
+        
+        # Récupération de l'historique des actions pour ce club
+        history_query = (
+            db.session.query(
+                ClubActionHistory,
+                Player.name.label('player_name'),
+                Performer.name.label('performed_by_name')
+            )
+            .outerjoin(Player, ClubActionHistory.user_id == Player.id)
+            .outerjoin(Performer, ClubActionHistory.performed_by_id == Performer.id)
+            .filter(ClubActionHistory.club_id == club.id)
+            .order_by(ClubActionHistory.performed_at.desc())
+            .all()
+        )
+        
+        # Formatage des données pour la réponse
+        history_data = []
+        for entry, player_name, performed_by_name in history_query:
+            history_data.append({
+                'id': entry.id,
+                'action_type': entry.action_type,
+                'action_details': entry.action_details,
+                'performed_at': entry.performed_at.isoformat(),
+                'player_id': entry.user_id,
+                'player_name': player_name,
+                'performed_by_id': entry.performed_by_id,
+                'performed_by_name': performed_by_name
+            })
+        
+        return jsonify({"history": history_data}), 200
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de l'historique club par admin: {e}")
+        return jsonify({"error": "Erreur serveur"}), 500
