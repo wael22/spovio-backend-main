@@ -40,6 +40,7 @@ def main():
     print(f"   Port: {port}")
     print(f"   Debug: {debug}")
     print(f"   Dossier projet: {project_root}")
+    print(f"📢 VERSION: FIX_V8 (Reverted Bitrate Force)")
     
     # Création de l'application
     try:

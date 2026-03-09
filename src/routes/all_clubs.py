@@ -1,9 +1,11 @@
 from flask import Blueprint, jsonify
 from src.models.user import Club, Court
+from src.extensions import cache
 
 all_clubs_bp = Blueprint("all_clubs", __name__)
 
 @all_clubs_bp.route("/all", methods=["GET"])
+@cache.cached(timeout=60, query_string=True)
 def get_all_clubs():
     try:
         clubs = Club.query.all()
@@ -12,6 +14,7 @@ def get_all_clubs():
         return jsonify({"error": str(e)}), 500
 
 @all_clubs_bp.route("/<int:club_id>/courts", methods=["GET"])
+@cache.cached(timeout=60, query_string=True)
 def get_club_courts(club_id):
     try:
         # Vérifier que le club existe

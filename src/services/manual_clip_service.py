@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, Optional
 from src.models.database import db
 from src.models.user import UserClip, Video
+from src.models.notification import Notification, NotificationType
 from src.config.bunny_config import BUNNY_CONFIG
 import requests
 
@@ -155,42 +156,43 @@ class ManualClipService:
             # Télécharger la vidéo source via API (utilise méthode existante)
             source_path = self._download_bunny_video(video.bunny_video_id)
             
+            # 🔍 ANALYSE RÉSOLUTION SOURCE
+            src_w, src_h = self._get_video_resolution(source_path)
+            logger.info(f"🔍 Source Resolution: {src_w}x{src_h}")
+            
             # Découper localement
             duration = clip.end_time - clip.start_time
             clip_path = self._cut_video_local(source_path, clip.start_time, clip.end_time)
             
-            # Générer miniature
-            logger.info("Generating thumbnail")
-            thumbnail_path = self._generate_thumbnail(clip_path)
+            # 🔍 ANALYSE RÉSOLUTION CLIP
+            clip_w, clip_h = self._get_video_resolution(clip_path)
+            logger.info(f"🔍 Clip Resolution: {clip_w}x{clip_h}")
             
-            # Upload vers Bunny Stream (pour streaming)
+            if clip_w < 720 and src_w >= 720:
+                logger.error(f"⚠️ QUALITY DROP DETECTED: Source {src_w}x{src_h} -> Clip {clip_w}x{clip_h}")
+            
+            # Upload vers Bunny Stream (pour streaming ET téléchargement)
             logger.info("Uploading clip to Bunny Stream")
             filename = f"clip_{clip.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
             clip_url, bunny_video_id = self._upload_to_bunny(clip_path, filename)
             
-            # 🆕 Upload vers Bunny Storage (pour téléchargement MP4)
-            logger.info("Uploading clip to Bunny Storage for downloads")
-            try:
-                from src.services.bunny_storage_uploader import upload_clip_to_storage
-                storage_url = upload_clip_to_storage(clip_path, filename)
-                logger.info(f"✅ Uploaded to Storage: {storage_url}")
-            except Exception as e:
-                logger.error(f"⚠️ Failed to upload to Storage: {e}")
-                storage_url = None  # Clip will still work for streaming
+            # Mettre à jour le clip avec l'URL Bunny Stream
+            clip.file_url = clip_url          # Bunny Stream (HLS pour lecture)
+            clip.storage_download_url = None  # Téléchargement via Bunny Stream MP4 direct
             
-            # Mettre à jour le clip avec les 2 URLs
-            clip.file_url = clip_url  # Bunny Stream (HLS)
-            clip.storage_download_url = storage_url  # Bunny Storage (MP4)
-            clip.thumbnail_url = thumbnail_path
+            # Miniature générée automatiquement par Bunny
+            clip.thumbnail_url = f"https://{config['cdn_hostname']}/{bunny_video_id}/thumbnail.jpg"
+            
             clip.bunny_video_id = bunny_video_id
-            clip.status = 'completed'
+            clip.status = 'processing'  # Bunny encode → bunny_status_updater passera à 'completed'
             clip.completed_at = datetime.utcnow()
+            
             db.session.commit()
             
             # Nettoyer fichiers temp
-            self._cleanup_files([clip_path, thumbnail_path])
+            self._cleanup_files([clip_path])
             
-            logger.info(f"✅ Clip {clip_id} processed successfully - Stream: {clip_url} | Download: {storage_url}")
+            logger.info(f"✅ Clip {clip_id} uploaded to Bunny Stream: {clip_url}")
             return True
             
         except Exception as e:
@@ -203,38 +205,52 @@ class ManualClipService:
     def _download_bunny_video(self, video_id: str) -> str:
         """
         Télécharge une vidéo depuis Bunny Stream via l'API
-        Utilise l'API Key pour l'authentification (pas de 403)
+        Si 'original' n'existe pas, fallback sur les versions encodées via CDN
         """
-        # 1. Récupérer les informations de la vidéo via l'API
         config = self._get_bunny_config()
-        api_url = f"https://video.bunnycdn.com/library/{config['library_id']}/videos/{video_id}"
         headers = {'AccessKey': config['api_key']}
         
-        logger.info(f"Fetching video info from Bunny API: {video_id}")
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status()
-        
-        video_info = response.json()
-        
-        # 2. Construire l'URL de téléchargement MP4
-        # Bunny Stream stocke les vidéos encodées, on prend la meilleure qualité
-        # L'URL de téléchargement direct nécessite l'API key
+        # 1. Tenter URL Originale (API Library)
         download_url = f"https://video.bunnycdn.com/library/{config['library_id']}/videos/{video_id}/mp4/original"
+        logger.info(f"Downloading video from Bunny API: {download_url}")
         
-        logger.info(f"Downloading video from Bunny API")
-        
-        # 3. Télécharger avec l'API key dans les headers
-        response = requests.get(download_url, headers=headers, stream=True)
-        response.raise_for_status()
-        
-        # 4. Sauvegarder dans un fichier temporaire
+        try:
+            response = requests.get(download_url, headers=headers, stream=True)
+            if response.status_code == 200:
+                return self._save_stream_to_temp(response)
+            else:
+                logger.warning(f"Original file not found (Status {response.status_code}). Trying fallbacks...")
+        except Exception as e:
+            logger.warning(f"Failed to connect to original URL: {e}. Trying fallbacks...")
+
+        # 2. Fallbacks CDN (Public URL)
+        hostname = config.get('cdn_hostname')
+        if not hostname:
+            raise ValueError("No CDN hostname in config for fallback")
+            
+        qualities = ['1080p', '720p', '480p']
+        for quality in qualities:
+            cdn_url = f"https://{hostname}/{video_id}/play_{quality}.mp4"
+            logger.info(f"Trying fallback: {cdn_url}")
+            
+            try:
+                # CDN public, pas de headers
+                response = requests.get(cdn_url, stream=True)
+                if response.status_code == 200:
+                    logger.info(f"✅ Found working fallback: {quality}")
+                    return self._save_stream_to_temp(response)
+            except Exception as e:
+                logger.warning(f"Fallback {quality} failed: {e}")
+                
+        raise ValueError(f"Could not download video {video_id} (Original + Fallbacks failed)")
+
+    def _save_stream_to_temp(self, response) -> str:
+        """Helper pour sauvegarder un stream dans un fichier temp"""
         temp_file = os.path.join(self.temp_dir, f"source_{datetime.now().timestamp()}.mp4")
-        
         with open(temp_file, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-        
-        logger.info(f"Downloaded Bunny video to {temp_file}")
+        logger.info(f"Downloaded video to {temp_file}")
         return temp_file
     
     def _download_video(self, url: str) -> str:
@@ -249,6 +265,42 @@ class ManualClipService:
                 f.write(chunk)
         
         return temp_file
+    
+    def _cut_video_local(self, input_path: str, start_time: float, end_time: float) -> str:
+        """Découpe une vidéo locale avec FFmpeg (Haute Qualité)"""
+        output_path = os.path.join(
+            self.temp_dir, 
+            f"clip_{datetime.now().timestamp()}_{int(start_time)}_{int(end_time)}.mp4"
+        )
+        
+        duration = end_time - start_time
+        
+        # Commande FFmpeg haute qualité
+        # -c:v libx264 -preset fast -crf 23 (Visuellement sans perte)
+        # -c:a aac -b:a 128k
+        cmd = [
+            'ffmpeg', '-y',
+            '-ss', str(start_time),
+            '-i', input_path,
+            '-t', str(duration),
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',  # Constance Rate Factor (18-28 est bon, 23 défaut)
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-movflags', '+faststart',
+            output_path
+        ]
+        
+        logger.info(f"Cutting locally: {input_path} ({start_time}-{end_time})")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            logger.error(f"FFmpeg local cut failed: {result.stderr}")
+            raise RuntimeError(f"FFmpeg failed: {result.stderr}")
+            
+        return output_path
+
     
     def _cut_video_from_bunny_api(self, video_id: str, start_time: float, end_time: float, config: dict) -> str:
         """
@@ -367,6 +419,26 @@ class ManualClipService:
         
         return output_path
     
+    def _get_video_resolution(self, file_path: str) -> tuple[int, int]:
+        """Returns (width, height) of video"""
+        try:
+            cmd = [
+                'ffprobe', 
+                '-v', 'error', 
+                '-select_streams', 'v:0', 
+                '-show_entries', 'stream=width,height', 
+                '-of', 'csv=s=x:p=0', 
+                file_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                parts = result.stdout.strip().split('x')
+                if len(parts) == 2:
+                    return int(parts[0]), int(parts[1])
+        except Exception as e:
+            logger.warning(f"Failed to get resolution: {e}")
+        return 0, 0
+
     def _generate_thumbnail(self, video_path: str) -> str:
         """Génère une miniature à partir de la vidéo"""
         thumbnail_path = os.path.join(

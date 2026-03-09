@@ -9,11 +9,22 @@ from pathlib import Path
 
 # Ajouter le répertoire parent au path
 project_root = Path(__file__).parent.absolute()
-sys.path.insert(0, str(project_root))
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# Chargement des variables d'environnement depuis .env si le fichier existe
+env_file = project_root / '.env'
+if env_file.exists():
+    print(f"📁 Chargement des variables d'environnement depuis {env_file}")
+    with open(env_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ.setdefault(key.strip(), value.strip())
 
 from src.main import create_app
-from src.database import db
-from src.models import User
+from src.models.user import db, User
 
 def init_database():
     """Initialise la base de données et crée l'admin par défaut"""
@@ -44,11 +55,12 @@ def init_database():
                 email=admin_email,
                 name=os.environ.get('DEFAULT_ADMIN_NAME', 'Super Admin'),
                 role='SUPER_ADMIN',
-                credits=int(os.environ.get('DEFAULT_ADMIN_CREDITS', 10000))
+                credits_balance=int(os.environ.get('DEFAULT_ADMIN_CREDITS', 10000))
             )
             
             admin_password = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'Admin2026!')
-            admin.set_password(admin_password)
+            from werkzeug.security import generate_password_hash
+            admin.password_hash = generate_password_hash(admin_password)
             
             db.session.add(admin)
             db.session.commit()

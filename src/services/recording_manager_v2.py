@@ -386,8 +386,9 @@ class RecordingManager:
             
             # Filtres
             "-vf", (
-                f"scale={config.VIDEO_WIDTH}:{config.VIDEO_HEIGHT},"
-                f"fps={config.VIDEO_FPS}"
+                f"fps={config.VIDEO_FPS}"  # Garder FPS constant
+                if getattr(config, 'NATIVE_RESOLUTION', False) else
+                f"scale={config.VIDEO_WIDTH}:{config.VIDEO_HEIGHT},fps={config.VIDEO_FPS}"
             ),
             
             # Codec

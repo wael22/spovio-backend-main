@@ -23,6 +23,7 @@ class NotificationType(PyEnum):
     VIDEO_SHARED = "VIDEO_SHARED"
     SUPPORT = "SUPPORT"
     CREDIT = "CREDIT"  # ✅ Fix: Value found in DB causing crashes
+    VIDEO = "VIDEO"  # ✅ Fix: Legacy generic video notification
 
 class Notification(db.Model):
     """Modèle pour les notifications utilisateur"""

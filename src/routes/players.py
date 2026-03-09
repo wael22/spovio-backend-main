@@ -144,6 +144,13 @@ def get_available_clubs():
         # Requête simple et sûre
         clubs_query = db.session.query(Club).all()
         
+        # Obtenir les compteurs de followers pour tous les clubs d'un coup pour plus de perf
+        from sqlalchemy import func
+        follower_counts = dict(db.session.query(
+            player_club_follows.c.club_id, 
+            func.count(player_club_follows.c.player_id)
+        ).group_by(player_club_follows.c.club_id).all())
+        
         # Requête des clubs suivis de manière sécurisée
         try:
             followed_ids = {c.id for c in user.followed_clubs.all()}
@@ -156,11 +163,8 @@ def get_available_clubs():
             club_dict = club.to_dict()
             club_dict["is_followed"] = club.id in followed_ids
             
-            # Compter les followers de manière sécurisée
-            try:
-                club_dict["followers_count"] = club.followers.count()
-            except Exception:
-                club_dict["followers_count"] = 0
+            # Compter les followers de manière sécurisée et correcte
+            club_dict["followers_count"] = follower_counts.get(club.id, 0)
                 
             # Compter les courts
             club_dict["courts_count"] = len(club.courts) if hasattr(club, 'courts') and club.courts else 0
@@ -321,6 +325,13 @@ def get_followed_clubs():
     try:
         followed_clubs_data = []
         
+        # Obtenir les compteurs de followers pour optimiser
+        from sqlalchemy import func
+        follower_counts = dict(db.session.query(
+            player_club_follows.c.club_id, 
+            func.count(player_club_follows.c.player_id)
+        ).group_by(player_club_follows.c.club_id).all())
+        
         # Requête sécurisée des clubs suivis
         try:
             followed_clubs = user.followed_clubs.all()
@@ -335,7 +346,7 @@ def get_followed_clubs():
             club_dict["courts_count"] = len(club.courts) if hasattr(club, 'courts') and club.courts else 0
             
             try:
-                club_dict["followers_count"] = club.followers.count()
+                club_dict["followers_count"] = follower_counts.get(club.id, 0)
             except Exception:
                 club_dict["followers_count"] = 0
                 

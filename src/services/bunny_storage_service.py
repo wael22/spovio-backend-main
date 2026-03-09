@@ -498,7 +498,7 @@ class BunnyStorageService:
                         video.file_url = task.bunny_url
                         video.bunny_video_id = task.bunny_video_id
                         video.status = "completed"
-                        video.uploaded_at = datetime.utcnow()
+                        video.cdn_migrated_at = datetime.utcnow()
                         db.session.commit()
                         logger.info(f"✅ URL vidéo {video_id} mise à jour: {task.bunny_url}")
                     else:

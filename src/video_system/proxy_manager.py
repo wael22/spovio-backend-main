@@ -49,6 +49,8 @@ def start_proxy_server(session_id: str, source_url: str, port: int) -> subproces
     
     logger.info(f"🚀 Starting video proxy server on port {port}")
     logger.info(f"   Source: {source_url}")
+    logger.info(f"   Python Executable: {sys.executable}")
+    logger.info(f"   Command: {cmd}")
     
     # Démarrer le processus
     process = subprocess.Popen(
@@ -68,7 +70,7 @@ class ProxyManager:
     
     def __init__(self):
         self.active_proxies = {}  # port -> process
-        logger.info("🎥 ProxyManager initialisé")
+        logger.info("🎥 ProxyManager initialisé (VERSION FIX_V2)")
     
     def start_proxy(
         self,
@@ -120,7 +122,7 @@ class ProxyManager:
             
             # Vérifier la santé (OBLIGATOIRE)
             local_url = f"http://127.0.0.1:{port}/stream.mjpg"
-            if not self._wait_for_proxy_ready(port, timeout=15):
+            if not self._wait_for_proxy_ready(port, timeout=30):
                 # CRITICAL: Ne pas continuer si le proxy n'est pas prêt
                 logger.error("❌ Proxy démarré mais le flux vidéo n'est pas disponible - arrêt du proxy")
                 try:
@@ -129,7 +131,7 @@ class ProxyManager:
                 except:
                     process.kill()
                 VideoConfig.free_port(port)
-                raise RuntimeError(f"Proxy sur port {port}: flux vidéo non disponible après 15 secondes")
+                raise RuntimeError(f"Proxy sur port {port}: flux vidéo non disponible après 30 secondes")
             
             self.active_proxies[port] = process
             

@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+    <title>🎾 Arbitre Padel — Spovio</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Orbitron:wght@700;900&display=swap"
+        rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        :root {
+            --bg: #080d18;
+            --card: #111827;
+            --accent: #3b82f6;
+            --green: #10b981;
+            --red: #ef4444;
+            --yellow: #f59e0b;
+            --orange: #f97316;
+            --text: #f1f5f9;
+            --muted: #64748b;
+            --border: rgba(255, 255, 255, .08);
+            --r: 16px;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            padding: 12px;
+            max-width: 480px;
+            margin: auto
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            padding: 10px 0 16px
+        }
+
+        header small {
+            font-size: 11px;
+            color: var(--muted);
+            letter-spacing: 3px;
+            text-transform: uppercase
+        }
+
+        header h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: clamp(16px, 5vw, 22px);
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent
+        }
+
+        /* Token */
+        .token-box {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            padding: 10px 14px;
+            margin-bottom: 12px
+        }
+
+        .token-box label {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            display: block;
+            margin-bottom: 4px
+        }
+
+        .token-box input {
+            width: 100%;
+            padding: 7px 10px;
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 12px;
+            outline: none
+        }
+
+        /* Scoreboard */
+        .scoreboard {
+            background: linear-gradient(135deg, #111827, #1a2235);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            padding: 16px 14px 18px;
+            margin-bottom: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .5)
+        }
+
+        /* Noms */
+        .team-names {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px
+        }
+
+        .team-names input {
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            text-align: center;
+            width: 100%;
+            outline: none;
+            padding: 4px 2px
+        }
+
+        .vs {
+            font-size: 11px;
+            color: var(--muted);
+            text-align: center
+        }
+
+        /* Sets row */
+        .sets-strip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px
+        }
+
+        .set-info {
+            text-align: center
+        }
+
+        .set-label {
+            font-size: 9px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px
+        }
+
+        .set-val {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+            line-height: 1
+        }
+
+        .btn-set {
+            padding: 3px 10px;
+            border-radius: 6px;
+            border: none;
+            background: var(--accent);
+            color: #fff;
+            font-size: 11px;
+            cursor: pointer;
+            margin-top: 3px
+        }
+
+        /* Games */
+        .games-strip {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 12px;
+            background: #0f172a;
+            border-radius: 10px;
+            padding: 8px 12px
+        }
+
+        .games-label {
+            font-size: 9px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: center;
+            margin-bottom: 2px
+        }
+
+        .games-val {
+            font-size: 22px;
+            font-weight: 700;
+            text-align: center;
+            color: var(--text)
+        }
+
+        .games-sep {
+            font-size: 18px;
+            color: var(--muted);
+            text-align: center
+        }
+
+        /* Points (le plus grand) */
+        .points-row {
+            display: grid;
+            grid-template-columns: 1fr 40px 1fr;
+            align-items: center;
+            gap: 6px
+        }
+
+        .point-block {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px
+        }
+
+        .point-display {
+            font-family: 'Orbitron', monospace;
+            font-size: clamp(52px, 14vw, 80px);
+            font-weight: 900;
+            line-height: 1;
+            background: linear-gradient(180deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent
+        }
+
+        .point-display.adv {
+            -webkit-text-fill-color: var(--green)
+        }
+
+        .point-display.deuce {
+            -webkit-text-fill-color: var(--yellow)
+        }
+
+        .point-sep {
+            font-family: 'Orbitron', monospace;
+            font-size: 32px;
+            color: var(--muted)
+        }
+
+        .pt-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            border: none;
+            font-size: 26px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform .1s
+        }
+
+        .pt-btn:active {
+            transform: scale(.9)
+        }
+
+        .pt-inc {
+            background: linear-gradient(135deg, var(--green), #059669);
+            color: #fff
+        }
+
+        /* Status deuce */
+        .deuce-banner {
+            text-align: center;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: rgba(245, 158, 11, .15);
+            border: 1px solid var(--yellow);
+            border-radius: 8px;
+            color: var(--yellow);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            display: none
+        }
+
+        .deuce-banner.show {
+            display: block
+        }
+
+        /* Reset / Save */
+        .actions-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 14px
+        }
+
+        .btn-action {
+            flex: 1;
+            padding: 8px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: transparent;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .2s
+        }
+
+        .btn-action.danger {
+            color: var(--red)
+        }
+
+        .btn-action.danger:hover {
+            background: rgba(239, 68, 68, .1)
+        }
+
+        .btn-action.info {
+            color: var(--accent)
+        }
+
+        .btn-action.info:hover {
+            background: rgba(59, 130, 246, .1)
+        }
+
+        /* Timer */
+        .timer-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            text-align: center
+        }
+
+        .section-label {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 8px
+        }
+
+        .timer-dsp {
+            font-family: 'Orbitron', monospace;
+            font-size: clamp(32px, 9vw, 50px);
+            font-weight: 700;
+            letter-spacing: 4px;
+            margin: 6px 0
+        }
+
+        .timer-dsp.running {
+            color: var(--green)
+        }
+
+        .timer-dsp.paused {
+            color: var(--yellow)
+        }
+
+        .timer-btns {
+            display: flex;
+            gap: 8px;
+            justify-content: center
+        }
+
+        .timer-btns button {
+            flex: 1;
+            max-width: 100px;
+            padding: 9px;
+            border-radius: 10px;
+            border: none;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer
+        }
+
+        #tbStart {
+            background: var(--green);
+            color: #fff
+        }
+
+        #tbPause {
+            background: var(--yellow);
+            color: #000
+        }
+
+        #tbReset {
+            background: #1e293b;
+            color: var(--muted);
+            border: 1px solid var(--border)
+        }
+
+        /* Recording */
+        .rec-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            padding: 14px 16px;
+            margin-bottom: 12px
+        }
+
+        .rec-card h3 {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px
+        }
+
+        .field {
+            margin-bottom: 10px
+        }
+
+        .field label {
+            display: block;
+            font-size: 10px;
+            color: var(--muted);
+            margin-bottom: 3px;
+            text-transform: uppercase
+        }
+
+        .field input,
+        .field select {
+            width: 100%;
+            padding: 9px 12px;
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 13px;
+            outline: none
+        }
+
+        .field input:focus {
+            border-color: var(--accent)
+        }
+
+        .btn-rec {
+            width: 100%;
+            padding: 13px;
+            border-radius: 12px;
+            border: none;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform .1s, box-shadow .2s
+        }
+
+        .btn-rec:active {
+            transform: scale(.97)
+        }
+
+        .btn-rec.start {
+            background: linear-gradient(135deg, var(--green), #059669);
+            color: #fff;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, .35)
+        }
+
+        .btn-rec.stop {
+            background: linear-gradient(135deg, var(--red), #dc2626);
+            color: #fff;
+            box-shadow: 0 4px 20px rgba(239, 68, 68, .35)
+        }
+
+        /* Status */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 12px
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0
+        }
+
+        .dot.green {
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green)
+        }
+
+        .dot.red {
+            background: var(--red);
+            box-shadow: 0 0 6px var(--red)
+        }
+
+        .dot.yellow {
+            background: var(--yellow);
+            box-shadow: 0 0 6px var(--yellow)
+        }
+
+        /* Snack */
+        #snack {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: var(--text);
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity .3s;
+            pointer-events: none;
+            z-index: 9999;
+            border: 1px solid var(--border)
+        }
+
+        #snack.show {
+            opacity: 1
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <small>Spovio</small>
+        <h1>🎾 Arbitre Padel</h1>
+    </header>
+
+    <!-- Token JWT -->
+    <div class="token-box">
+        <label>Token JWT</label>
+        <input type="password" id="jwt" placeholder="Bearer eyJ..." />
+    </div>
+
+    <!-- ── SCOREBOARD ── -->
+    <div class="scoreboard">
+
+        <!-- Noms -->
+        <div class="team-names">
+            <input id="nameA" value="Équipe A" maxlength="18" />
+            <div class="vs">VS</div>
+            <input id="nameB" value="Équipe B" maxlength="18" />
+        </div>
+
+        <!-- Sets -->
+        <div class="sets-strip">
+            <div class="set-info">
+                <div class="set-label">Sets</div>
+                <div class="set-val" id="setA">0</div>
+                <button class="btn-set" onclick="act('set_a')">+Set</button>
+            </div>
+            <div style="text-align:center;color:var(--muted);font-size:11px">SETS</div>
+            <div class="set-info">
+                <div class="set-label">Sets</div>
+                <div class="set-val" id="setB">0</div>
+                <button class="btn-set" onclick="act('set_b')">+Set</button>
+            </div>
+        </div>
+
+        <!-- Jeux -->
+        <div class="games-strip">
+            <div>
+                <div class="games-label">Jeux</div>
+                <div class="games-val" id="gameA">0</div>
+            </div>
+            <div class="games-sep">–</div>
+            <div>
+                <div class="games-label">Jeux</div>
+                <div class="games-val" id="gameB">0</div>
+            </div>
+        </div>
+
+        <!-- Points -->
+        <div class="points-row">
+            <div class="point-block">
+                <div class="point-display" id="ptA">0</div>
+                <button class="pt-btn pt-inc" onclick="act('point_a')">+</button>
+            </div>
+            <div class="point-sep">:</div>
+            <div class="point-block">
+                <div class="point-display" id="ptB">0</div>
+                <button class="pt-btn pt-inc" onclick="act('point_b')">+</button>
+            </div>
+        </div>
+
+        <!-- Deuce banner -->
+        <div class="deuce-banner" id="deuceBanner">⚖️ DEUCE</div>
+
+        <!-- Actions -->
+        <div class="actions-row">
+            <button class="btn-action danger" onclick="act('reset')">🔄 Reset total</button>
+            <button class="btn-action info" onclick="saveNames()">💾 Sauver noms</button>
+            <button class="btn-action info" onclick="act('game_a')" style="color:var(--orange)">+Jeu A</button>
+            <button class="btn-action info" onclick="act('game_b')" style="color:var(--orange)">+Jeu B</button>
+        </div>
+    </div>
+
+    <!-- ── CHRONOMÈTRE ── -->
+    <div class="timer-card">
+        <div class="section-label">⏱ Chronomètre</div>
+        <div class="timer-dsp paused" id="timerDsp">00:00</div>
+        <div class="timer-btns">
+            <button id="tbStart" onclick="timerAct('start')">▶ Start</button>
+            <button id="tbPause" onclick="timerAct('pause')">⏸ Pause</button>
+            <button id="tbReset" onclick="timerAct('reset')">↺ Reset</button>
+        </div>
+    </div>
+
+    <!-- ── ENREGISTREMENT ── -->
+    <div class="rec-card">
+        <h3>🎬 Enregistrement</h3>
+        <div class="field"><label>Terrain (Court ID)</label><input type="number" id="courtId" value="1" min="1" /></div>
+        <div class="field"><label>Durée (minutes)</label><input type="number" id="duration" value="60" min="5"
+                max="180" /></div>
+        <div class="field"><label>🔴 Clé YouTube (optionnel)</label><input type="text" id="ytKey"
+                placeholder="laisser vide si pas de stream" /></div>
+        <button class="btn-rec start" id="btnRec" onclick="toggleRec()">🔴 Démarrer l'enregistrement</button>
+    </div>
+
+    <!-- ── STATUS ── -->
+    <div class="status-bar">
+        <div class="dot yellow" id="statusDot"></div>
+        <span id="statusTxt">Chargement...</span>
+    </div>
+
+    <div id="snack"></div>
+
+    <script>
+        const API = '';
+        let recording = false, sessionId = null;
+        let timerRunning = false, timerBase = 0, timerInterval = null, timerLocalStart = null;
+
+        function hdr() {
+            const t = document.getElementById('jwt').value.trim();
+            return { 'Content-Type': 'application/json', ...(t ? { 'Authorization': t.startsWith('Bearer') ? t : 'Bearer ' + t } : {}) };
+        }
+        function snack(msg, c = '#1e293b') {
+            const el = document.getElementById('snack');
+            el.textContent = msg; el.style.borderColor = c; el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 2800);
+        }
+
+        /* ── Score ── */
+        async function act(action) {
+            try {
+                const r = await fetch(API + '/api/arbitre/score', { method: 'POST', headers: hdr(), body: JSON.stringify({ action }) });
+                const d = await r.json();
+                if (d.ok) render(d.state);
+            } catch { snack('❌ Erreur', '#ef4444'); }
+        }
+        async function saveNames() {
+            const team_a = document.getElementById('nameA').value.trim() || 'Équipe A';
+            const team_b = document.getElementById('nameB').value.trim() || 'Équipe B';
+            try {
+                const r = await fetch(API + '/api/arbitre/score', { method: 'POST', headers: hdr(), body: JSON.stringify({ team_a, team_b }) });
+                const d = await r.json();
+                if (d.ok) { render(d.state); snack('✅ Noms sauvegardés', '#10b981'); }
+            } catch { snack('❌ Erreur', '#ef4444'); }
+        }
+
+        function render(s) {
+            // Points
+            const ptA = document.getElementById('ptA');
+            const ptB = document.getElementById('ptB');
+            ptA.textContent = s.pt_a_label ?? s.pt_a;
+            ptB.textContent = s.pt_b_label ?? s.pt_b;
+
+            // Classes spéciales
+            ptA.className = 'point-display' + (s.pt_a_label === 'ADV' ? ' adv' : '') + (s.deuce ? ' deuce' : '');
+            ptB.className = 'point-display' + (s.pt_b_label === 'ADV' ? ' adv' : '') + (s.deuce ? ' deuce' : '');
+
+            // Deuce banner
+            const db = document.getElementById('deuceBanner');
+            db.className = 'deuce-banner' + (s.deuce ? ' show' : '');
+            if (s.advantage) {
+                const who = s.advantage === 'a' ? s.team_a : s.team_b;
+                db.textContent = '🏆 AVANTAGE — ' + who;
+                db.style.borderColor = '#10b981'; db.style.color = '#10b981';
+                db.style.background = 'rgba(16,185,129,.12)';
+            } else if (s.deuce) {
+                db.textContent = '⚖️ DEUCE';
+                db.style.borderColor = '#f59e0b'; db.style.color = '#f59e0b';
+                db.style.background = 'rgba(245,158,11,.12)';
+            }
+
+            // Jeux & Sets
+            document.getElementById('gameA').textContent = s.game_a;
+            document.getElementById('gameB').textContent = s.game_b;
+            document.getElementById('setA').textContent = s.set_a;
+            document.getElementById('setB').textContent = s.set_b;
+
+            // Noms
+            document.getElementById('nameA').value = s.team_a;
+            document.getElementById('nameB').value = s.team_b;
+
+            // Recording state
+            if (s.recording_session && !recording) {
+                recording = true; sessionId = s.recording_session;
+                document.getElementById('btnRec').className = 'btn-rec stop';
+                document.getElementById('btnRec').innerHTML = "⏹ Arrêter l'enregistrement";
+            }
+        }
+
+        /* ── Timer ── */
+        async function timerAct(action) {
+            try {
+                const r = await fetch(API + '/api/arbitre/timer', { method: 'POST', headers: hdr(), body: JSON.stringify({ action }) });
+                const d = await r.json();
+                if (!d.ok) return;
+                const s = d.state;
+                timerRunning = s.timer_running;
+                timerBase = s.timer_elapsed || 0;
+                timerLocalStart = new Date();
+                const dsp = document.getElementById('timerDsp');
+                if (timerRunning) {
+                    dsp.className = 'timer-dsp running';
+                    if (!timerInterval) timerInterval = setInterval(tickTimer, 500);
+                } else {
+                    clearInterval(timerInterval); timerInterval = null;
+                    dsp.className = 'timer-dsp paused';
+                    renderTimer(action === 'reset' ? 0 : timerBase);
+                }
+            } catch { snack('❌ Timer', '#ef4444'); }
+        }
+        function tickTimer() { renderTimer(timerBase + (new Date() - timerLocalStart) / 1000); }
+        function renderTimer(secs) {
+            const t = Math.floor(secs);
+            const m = String(Math.floor(t / 60)).padStart(2, '0');
+            const s = String(t % 60).padStart(2, '0');
+            document.getElementById('timerDsp').textContent = m + ':' + s;
+        }
+
+        /* ── Recording ── */
+        async function toggleRec() {
+            if (!recording) {
+                const court = document.getElementById('courtId').value;
+                const dur = document.getElementById('duration').value;
+                const yt = document.getElementById('ytKey').value.trim();
+                try {
+                    const r = await fetch(API + '/api/arbitre/recording/start', { method: 'POST', headers: hdr(), body: JSON.stringify({ court_id: +court, duration_minutes: +dur, youtube_key: yt }) });
+                    const d = await r.json();
+                    if (d.ok) {
+                        recording = true;
+                        sessionId = d.session_id || d.data?.session_id;
+                        document.getElementById('btnRec').className = 'btn-rec stop';
+                        document.getElementById('btnRec').innerHTML = "⏹ Arrêter l'enregistrement";
+                        snack('✅ Enregistrement démarré !', '#10b981');
+                        poll();
+                    } else snack('❌ ' + (d.error || 'Erreur'), '#ef4444');
+                } catch { snack('❌ Erreur réseau', '#ef4444'); }
+            } else {
+                try {
+                    const r = await fetch(API + '/api/arbitre/recording/stop', { method: 'POST', headers: hdr(), body: JSON.stringify({ session_id: sessionId }) });
+                    const d = await r.json();
+                    recording = false; sessionId = null;
+                    document.getElementById('btnRec').className = 'btn-rec start';
+                    document.getElementById('btnRec').innerHTML = '🔴 Démarrer l\'enregistrement';
+                    snack('⏹ Enregistrement arrêté', '#f59e0b');
+                    poll();
+                } catch { snack('❌ Erreur arrêt', '#ef4444'); }
+            }
+        }
+
+        /* ── Status polling ── */
+        async function poll() {
+            try {
+                const r = await fetch(API + '/api/arbitre/status', { headers: hdr() });
+                const d = await r.json();
+                const m = d.match;
+                const dot = document.getElementById('statusDot');
+                const txt = document.getElementById('statusTxt');
+                if (m.recording_session && m.youtube_active) {
+                    dot.className = 'dot green';
+                    txt.textContent = '🔴 Live — ' + m.pt_a_label + ' : ' + m.pt_b_label + ' — YouTube actif';
+                } else if (m.recording_session) {
+                    dot.className = 'dot red';
+                    txt.textContent = '⏺ Enregistrement — ' + m.pt_a_label + ' : ' + m.pt_b_label;
+                } else {
+                    dot.className = 'dot yellow';
+                    txt.textContent = 'En attente · Aucun enregistrement actif';
+                }
+                render(m);
+            } catch {
+                document.getElementById('statusTxt').textContent = '⚠️ Backend non joignable';
+                document.getElementById('statusDot').className = 'dot red';
+            }
+        }
+        setInterval(poll, 5000);
+        poll();
+    </script>
+</body>
+
+</html>

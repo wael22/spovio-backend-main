@@ -64,8 +64,8 @@ def send_notification(self, user_id, notification_type, title, message,
             priority=priority,
             related_resource_type=related_resource_type,
             related_resource_id=related_resource_id,
-            action_url=action_url,
-            action_label=action_label,
+            link=action_url,
+            # action_label=action_label, # Not in model
             expires_at=expires_at
         )
         

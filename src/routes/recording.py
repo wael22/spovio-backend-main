@@ -18,6 +18,7 @@ from ..models.user import (
 # from ..services.video_capture_service_ultimate import (
 #     DirectVideoCaptureService
 # )
+from ..video_system.config import VideoConfig
 
 # Instance globale du service
 # video_capture_service = DirectVideoCaptureService()
@@ -351,13 +352,15 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
             file_url=f'/videos/rec_{recording_session.recording_id}.mp4',
             is_unlocked=True,
             processing_status='pending',  # 🆕 Statut initial avant upload
-            local_file_path=f"static/videos/{recording_session.club_id}/{recording_session.recording_id}.mp4" if os.path.exists(f"static/videos/{recording_session.club_id}/{recording_session.recording_id}.mp4") else (f"static/videos/{recording_session.recording_id}.mp4" if os.path.exists(f"static/videos/{recording_session.recording_id}.mp4") else None)
+            local_file_path=str(VideoConfig.get_video_dir(recording_session.club_id) / f"{recording_session.recording_id}.mp4") if (VideoConfig.get_video_dir(recording_session.club_id) / f"{recording_session.recording_id}.mp4").exists() else (f"static/videos/{recording_session.recording_id}.mp4" if os.path.exists(f"static/videos/{recording_session.recording_id}.mp4") else None)
         )
         
         # 📦 Calculer la taille du fichier si disponible
         try:
             # Chemins possibles pour le fichier vidéo
+            video_dir = VideoConfig.get_video_dir(recording_session.club_id)
             possible_paths = [
+                str(video_dir / f"{recording_session.recording_id}.mp4"),
                 f"static/videos/{recording_session.club_id}/{recording_session.recording_id}.mp4",
                 f"static/videos/{recording_session.recording_id}.mp4"
             ]
@@ -397,11 +400,40 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
         
         logger.info(f"Enregistrement arrêté: {recording_session.recording_id} par {stopped_by}")
 
+        # 🔔 NOTIFICATION D'ARRÊT (si pas par le joueur)
+        if stopped_by in ['auto', 'club']:
+            try:
+                from ..models.notification import Notification, NotificationType
+                
+                notif_title = "Enregistrement terminé"
+                if stopped_by == 'auto':
+                    notif_msg = "Votre session a expiré et l'enregistrement a été arrêté automatiquement."
+                else:
+                    notif_msg = "Le club a arrêté votre session d'enregistrement."
+                
+                # Créer la notification
+                # Note: On utilise le constructeur direct car create_notification n'est peut-être pas une méthode de classe accessible ici
+                notif = Notification(
+                    user_id=recording_session.user_id,
+                    notification_type=NotificationType.RECORDING_STOPPED,
+                    title=notif_title,
+                    message=notif_msg,
+                    related_resource_type='video',
+                    related_resource_id=str(video.id)
+                )
+                db.session.add(notif)
+                db.session.commit()
+                logger.info(f"✅ Notification d'arrêt envoyée à l'utilisateur {recording_session.user_id}")
+            except Exception as notif_e:
+                logger.error(f"⚠️ Erreur envoi notification arrêt: {notif_e}")
+
         # 🚀 UPLOAD BUNNY CDN AUTOMATIQUE
         try:
             # Déterminer le chemin local du fichier
             local_video_path = None
+            video_dir = VideoConfig.get_video_dir(recording_session.club_id)
             possible_paths = [
+                str(video_dir / f"{recording_session.recording_id}.mp4"),
                 f"static/videos/{recording_session.club_id}/{recording_session.recording_id}.mp4",
                 f"static/videos/{recording_session.recording_id}.mp4"
             ]
@@ -445,11 +477,7 @@ def _stop_recording_session(recording_session, stopped_by, performed_by_id):
                     cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
                     video.file_url = f"https://{cdn_hostname}/{bunny_id}/playlist.m3u8"
                     # 🆕 Mettre à jour le statut selon le statut Bunny
-                    bunny_status = upload_status.get('status', 'pending')
-                    if bunny_status == 'completed':
-                        video.processing_status = 'ready'
-                    else:
-                        video.processing_status = 'processing'
+                    video.processing_status = 'processing'
                     db.session.commit()
                     logger.info(f"✅ Bunny video ID saved: {video.bunny_video_id}")
                     logger.info(f"✅ Bunny URL updated: {video.file_url}")

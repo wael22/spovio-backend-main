@@ -13,6 +13,7 @@ from ..services.email_verification_service import (
     verify_email_code
 )
 from ..utils.jwt_helpers import generate_jwt_token, get_current_user_from_token  # 🆕 JWT Support
+from ..middleware.rate_limiter import rate_limit  # 🛡️ Rate limiting protection
 import re
 import traceback
 import logging # Ajout du logger
@@ -35,6 +36,7 @@ def validate_email(email):
     return re.match(pattern, email) is not None
 
 @auth_bp.route('/register', methods=['POST'])
+@rate_limit(max_attempts=5, window=60, block_duration=300)
 def register():
     try:
         data = request.get_json()
@@ -102,28 +104,47 @@ def register():
 
 
 @auth_bp.route('/login', methods=['POST'])
+@rate_limit(max_attempts=5, window=60, block_duration=300)
 def login():
     try:
         data = request.get_json()
-        if not data or not data.get('email') or not data.get('password'):
-            return jsonify({'error': 'Email et mot de passe requis'}), 400
-        email = data['email'].lower().strip()
+        print(f"LOGIN ATTEMPT - Data received: {data}")
+        email = data['email'].strip()
         password = data['password']
-        user = User.query.filter_by(email=email).first()
         
+        # Search case-insensitively (email might be stored with uppercase)
+        user = User.query.filter(User.email.ilike(email)).first()
+        
+        print(f"LOGIN ATTEMPT - User found: {user is not None}")
+        if user:
+            print(f"LOGIN ATTEMPT - User email: {user.email}, role: {user.role}, verified: {user.email_verified}")
+
         # Vérifier si c'est un super admin - rediriger vers l'endpoint dédié
         if user and user.role == UserRole.SUPER_ADMIN:
+            print("LOGIN FAIL: Super admin attempted regular login")
             return jsonify({
                 'error': 'Les super administrateurs doivent utiliser la page de connexion dédiée.',
                 'redirect_to_super_admin': True
             }), 403
         
-        if not user or not user.password_hash or not check_password_hash(user.password_hash, password):
+        if not user:
+             print("LOGIN FAIL: User not found in DB")
+             return jsonify({'error': 'Email ou mot de passe incorrect'}), 401
+
+        if not user.password_hash:
+             print("LOGIN FAIL: User has no password hash")
+             return jsonify({'error': 'Email ou mot de passe incorrect'}), 401
+
+        is_valid_pwd = check_password_hash(user.password_hash, password)
+        print(f"LOGIN ATTEMPT - Password valid: {is_valid_pwd}")
+
+        if not is_valid_pwd:
             return jsonify({'error': 'Email ou mot de passe incorrect'}), 401
         
         # Vérifier que l'email est vérifié (sauf pour Google OAuth)
         if not user.email_verified and not user.google_id:
             logger.warning(f"⚠️ Tentative de connexion avec email non vérifié: {email}")
+            print("LOGIN FAIL: Email not verified")
             return jsonify({
                 'error': 'Veuillez vérifier votre adresse email avant de vous connecter.',
                 'requires_verification': True,
@@ -283,13 +304,66 @@ def update_profile():
 # ====================================================================
 # GESTION DES AVATARS
 # ====================================================================
-from werkzeug.utils import secure_filename
+from werkzeug.utils import secure_filename, safe_join
+from flask import send_from_directory
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_avatars_folder():
+    """Retourne le chemin du dossier avatars, compatible Docker volume et local."""
+    # En Docker, le volume est monté sur /app/src/static/uploads/avatars
+    # En local, c'est relatif au cwd
+    docker_path = '/app/src/static/uploads/avatars'
+    local_path = os.path.join(os.getcwd(), 'src', 'static', 'uploads', 'avatars')
+    if os.path.exists(docker_path):
+        return docker_path
+    return local_path
+
+@auth_bp.route('/static/avatars/<path:filename>', methods=['GET'])
+def serve_avatar(filename):
+    """Sert les fichiers avatar depuis le volume Docker — route utilisée par le frontend."""
+    try:
+        avatars_folder = get_avatars_folder()
+        os.makedirs(avatars_folder, exist_ok=True)
+        response = send_from_directory(avatars_folder, filename)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        return response
+    except Exception as e:
+        logger.warning(f"Avatar non trouvé: {filename} — {e}")
+        return jsonify({'error': 'Fichier non trouvé'}), 404
+
+def get_overlays_folder():
+    """Retourne le chemin du dossier overlays, compatible Docker volume et local."""
+    docker_path = '/app/static/overlays'
+    local_path = os.path.join(os.getcwd(), 'static', 'overlays')
+    if os.path.exists(docker_path):
+        return docker_path
+    
+    # Check parent dir for local dev
+    alt_local_path = os.path.join(os.path.dirname(os.getcwd()), 'spovio-backend-main', 'static', 'overlays')
+    if os.path.exists(alt_local_path):
+        return alt_local_path
+        
+    return local_path
+
+@auth_bp.route('/static/overlays/<path:filename>', methods=['GET'])
+def serve_overlay(filename):
+    """Sert les fichiers overlay depuis le volume Docker."""
+    try:
+        overlays_folder = get_overlays_folder()
+        os.makedirs(overlays_folder, exist_ok=True)
+        response = send_from_directory(overlays_folder, filename)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        return response
+    except Exception as e:
+        logger.warning(f"Overlay non trouvé: {filename} — {e}")
+        return jsonify({'error': 'Fichier non trouvé'}), 404
 
 @auth_bp.route('/upload-avatar', methods=['POST'])
 def upload_avatar():
@@ -307,12 +381,13 @@ def upload_avatar():
             return jsonify({'error': 'Aucun fichier sélectionné'}), 400
             
         if file and allowed_file(file.filename):
-            # Créer le dossier s'il n'existe pas
-            upload_folder = os.path.join(os.getcwd(), 'src', 'static', 'uploads', 'avatars')
+            # Utiliser le bon dossier (compatible Docker volume)
+            upload_folder = get_avatars_folder()
             os.makedirs(upload_folder, exist_ok=True)
             
             # Sécuriser le nom du fichier
-            filename = secure_filename(f"user_{user_id}_{int(datetime.now().timestamp())}_{file.filename}")
+            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
+            filename = f"user_{user_id}_{int(datetime.now().timestamp())}.{ext}"
             file_path = os.path.join(upload_folder, filename)
             
             # Sauvegarder le fichier
@@ -320,9 +395,6 @@ def upload_avatar():
             
             # Mettre à jour l'utilisateur
             user = User.query.get(user_id)
-            # URL accessible depuis le frontend (via static)
-            # L'URL doit correspondre à la config statique de Flask ou Nginx
-            # Supposons que /static est servi
             avatar_url = f"/static/uploads/avatars/{filename}"
             
             user.avatar = avatar_url
@@ -345,35 +417,49 @@ def upload_avatar():
 # NOUVELLE ROUTE PLACÉE À LA FIN DU FICHIER
 # ====================================================================
 @auth_bp.route('/change-password', methods=['POST'])
+@rate_limit(max_attempts=5, window=60, block_duration=300)
 def change_password():
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'Non authentifié'}), 401
+    # 🆕 Support JWT token authentication (same as /me endpoint)
+    current_user = get_current_user_from_token()
     
-    user = User.query.get(user_id)
-    if not user:
+    if not current_user:
+        # Fallback to session
+        user_id = session.get('user_id')
+        if not user_id:
+            logger.warning("❌ Change password: Non authentifié (ni JWT ni session)")
+            return jsonify({'error': 'Non authentifié'}), 401
+        current_user = User.query.get(user_id)
+    
+    if not current_user:
         return jsonify({'error': 'Utilisateur non trouvé'}), 404
         
     data = request.get_json()
-    old_password = data.get('old_password')
-    new_password = data.get('new_password')
+    if not data:
+        logger.warning(f"❌ Change password: Pas de données JSON pour user {current_user.id}")
+        return jsonify({'error': 'Données JSON requises'}), 400
+    
+    old_password = data.get('old_password') or data.get('currentPassword') or data.get('current_password')
+    new_password = data.get('new_password') or data.get('newPassword')
     
     if not old_password or not new_password:
+        logger.warning(f"❌ Change password: Champs manquants pour user {current_user.id}. Keys reçues: {list(data.keys())}")
         return jsonify({'error': 'Ancien et nouveau mots de passe requis'}), 400
         
-    if not user.password_hash or not check_password_hash(user.password_hash, old_password):
+    if not current_user.password_hash or not check_password_hash(current_user.password_hash, old_password):
+        logger.warning(f"❌ Change password: Ancien mot de passe incorrect pour user {current_user.id}")
         return jsonify({'error': 'Ancien mot de passe incorrect'}), 403
         
     if len(new_password) < 6:
         return jsonify({'error': 'Le nouveau mot de passe doit contenir au moins 6 caractères'}), 400
         
     try:
-        user.password_hash = generate_password_hash(new_password)
+        current_user.password_hash = generate_password_hash(new_password)
         db.session.commit()
+        logger.info(f"✅ Mot de passe changé avec succès pour user {current_user.id}")
         return jsonify({'message': 'Mot de passe mis à jour avec succès'}), 200
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Erreur lors du changement de mot de passe pour l'utilisateur {user.id}: {e}")
+        logger.error(f"❌ Erreur lors du changement de mot de passe pour l'utilisateur {current_user.id}: {e}")
         return jsonify({'error': 'Erreur interne lors de la mise à jour'}), 500
 
 
@@ -652,6 +738,7 @@ from ..services.password_reset_service import request_password_reset, reset_pass
 from ..services.user_service import UserService
 
 @auth_bp.route('/forgot-password', methods=['POST'])
+@rate_limit(max_attempts=3, window=60, block_duration=300)
 def forgot_password():
     """Demande de réinitialisation de mot de passe"""
     try:
@@ -677,6 +764,7 @@ def forgot_password():
 
 
 @auth_bp.route('/reset-password', methods=['POST'])
+@rate_limit(max_attempts=5, window=60, block_duration=300)
 def reset_password_route():
     """Réinitialisation effective du mot de passe avec token"""
     try:

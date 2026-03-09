@@ -182,11 +182,25 @@ class SessionManager:
         """
         logger.info(f"🔍 Validation caméra: {camera_url}")
         
-        # Détecter le type basé sur l'URL
-        if camera_url.startswith('rtsp://'):
+        # Nettoyer l'URL (espaces avant/après)
+        if not camera_url:
+            return False, 'unknown'
+            
+        camera_url = camera_url.strip()
+        
+        # Détecter le type basé sur l'URL (insensible à la casse pour le protocole)
+        url_lower = camera_url.lower()
+        
+        if url_lower.startswith('rtsp://'):
             camera_type = 'rtsp'
             # Pour RTSP, on fait confiance (validation coûteuse avec OpenCV)
             logger.info(f"✅ RTSP détecté, validation rapide")
+            return True, camera_type
+            
+        elif url_lower.startswith('rtmp://'):
+            camera_type = 'rtmp'
+            # Pour RTMP, on fait confiance aussi
+            logger.info(f"✅ RTMP détecté, validation rapide")
             return True, camera_type
         
         elif 'mjpg' in camera_url.lower() or 'mjpeg' in camera_url.lower():

@@ -249,7 +249,189 @@ class FFmpegRunner:
         ])
         
         return cmd
-    
+
+    # =========================================================================
+    # DUAL OUTPUT: Enregistrement + Stream YouTube (1 seul processus FFmpeg)
+    # =========================================================================
+
+    def build_command_with_youtube(
+        self,
+        camera_url: str,
+        output_path: str,
+        youtube_key: str,
+        camera_type: str = 'rtsp',
+        quality: str = 'medium',
+        max_duration: int = 3600,
+        score_file: str = None,
+        youtube_bitrate: str = '2500k'
+    ) -> List[str]:
+        """
+        Construit une commande FFmpeg avec double sortie :
+          - MP4 local  (enregistrement)
+          - RTMP YouTube (stream live)
+        Un seul processus = moins de CPU que 2 processus séparés.
+
+        Paramètres
+        ----------
+        score_file : chemin vers un fichier texte dont le contenu s'affiche
+                     en overlay (relu chaque seconde avec reload=1).
+                     Si None, pas d'overlay.
+        youtube_bitrate : débit vidéo pour YouTube (défaut 2500 k pour économiser le CPU).
+        """
+        preset = self.quality_presets.get(quality, self.quality_presets['medium'])
+
+        cmd = [FFMPEG_PATH, '-hide_banner', '-loglevel', 'error', '-stats', '-nostdin']
+
+        # --- Entrée ---
+        if camera_type.lower() in ('rtsp', 'default'):
+            cmd.extend([
+                '-rtsp_transport', 'tcp',
+                '-rtsp_flags',     'prefer_tcp',
+                '-max_delay',      '500000',
+                '-fflags',         'nobuffer',
+                '-flags',          'low_delay',
+                '-i', camera_url,
+                '-use_wallclock_as_timestamps', '1',
+                '-fflags', '+genpts+discardcorrupt',
+            ])
+        elif camera_type.lower() in ('mjpeg', 'http'):
+            cmd.extend([
+                '-f',      'mjpeg',
+                '-fflags', 'nobuffer',
+                '-flags',  'low_delay',
+                '-i', camera_url,
+                '-use_wallclock_as_timestamps', '1',
+                '-fflags', '+genpts+discardcorrupt',
+            ])
+        else:
+            cmd.extend(['-i', camera_url])
+
+        # --- Filtre vidéo (scale + fps + overlay optionnel) ---
+        base_filter = (
+            f"scale={preset['scale']}:"
+            f"force_original_aspect_ratio=decrease,"
+            f"fps={preset['fps']},"
+            f"format=yuv420p"
+        )
+
+        if score_file and os.path.exists(score_file):
+            # Overlay score relu chaque seconde
+            video_filter = (
+                f"{base_filter},"
+                f"drawtext="
+                f"textfile={score_file}:"
+                f"reload=1:"
+                f"fontsize=42:"
+                f"fontcolor=white:"
+                f"box=1:boxcolor=black@0.55:boxborderw=12:"
+                f"x=(w-text_w)/2:y=15"
+            )
+        else:
+            video_filter = base_filter
+
+        # --- Encodage commun (une seule passe) ---
+        cmd.extend([
+            '-vf', video_filter,
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',        # Réduit le CPU vs preset original
+            '-tune', 'zerolatency',
+            '-profile:v', 'main',
+            '-level:v', '4.0',
+            '-pix_fmt', 'yuv420p',
+            '-b:v', youtube_bitrate,       # Bitrate fixe pour YouTube
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-ar', '44100',
+            '-ac', '2',
+            '-threads', '2',               # Limite les cœurs CPU
+            '-t', str(max_duration),
+        ])
+
+        # --- Double sortie via tee ---
+        # Le muxer tee permet d'écrire vers 2 destinations avec un seul encodage.
+        # Options par destination entre crochets : [f=<format>:<opt>=<val>]
+        mp4_out  = f"[f=mp4:movflags=+faststart+dash:max_muxing_queue_size=1024]{output_path}"
+        rtmp_out = f"[f=flv]{youtube_key if youtube_key.startswith('rtmp://') else f'rtmp://a.rtmp.youtube.com/live2/{youtube_key}'}"
+
+        cmd.extend(['-f', 'tee', '-map', '0:v', '-map', '0:a?',
+                    f"{mp4_out}|{rtmp_out}"])
+
+        return cmd
+
+    def start_recording_with_youtube(
+        self,
+        camera_url: str,
+        output_path: str,
+        youtube_key: str,
+        camera_type: str = 'rtsp',
+        quality: str = 'medium',
+        max_duration: int = 3600,
+        score_file: str = None,
+    ) -> subprocess.Popen:
+        """
+        Démarre un enregistrement avec re-stream YouTube simultané.
+
+        En cas d'échec de la commande double-sortie (ex: YouTube injoignable),
+        bascule automatiquement sur l'enregistrement seul pour ne pas perdre
+        la session de jeu.
+        """
+        output_dir = Path(output_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        cmd = self.build_command_with_youtube(
+            camera_url, output_path, youtube_key,
+            camera_type, quality, max_duration, score_file
+        )
+
+        logger.info("🎥+📺 Démarrage FFmpeg double sortie (MP4 + YouTube)...")
+        logger.info(f"   Entrée  : {camera_url}")
+        logger.info(f"   Sortie 1: {output_path}")
+        logger.info(f"   Sortie 2: YouTube RTMP")
+        if score_file:
+            logger.info(f"   Overlay : {score_file}")
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=0,
+                env=dict(os.environ,
+                         **{'FFREPORT': 'file=/tmp/ffmpeg-youtube.log:level=32'})
+            )
+
+            time.sleep(2)  # Attendre un peu plus longtemps pour le RTMP
+            if process.poll() is not None:
+                # Processus mort → YouTube probablement injoignable
+                stderr_out = process.stderr.read() if process.stderr else ""
+                logger.warning(
+                    f"⚠️  FFmpeg double sortie échoué : {stderr_out[:300]}")
+                logger.warning("🔄 Basculement vers enregistrement seul...")
+
+                # ---- FALLBACK : enregistrement seul ----
+                return self.start_recording(
+                    camera_url, output_path, camera_type, quality, max_duration
+                )
+
+            logger.info("✅ FFmpeg double sortie démarré avec succès")
+            return process
+
+        except Exception as e:
+            logger.error(f"❌ Erreur démarrage FFmpeg double sortie: {e}")
+            logger.warning("🔄 Basculement vers enregistrement seul...")
+            # ---- FALLBACK : enregistrement seul ----
+            return self.start_recording(
+                camera_url, output_path, camera_type, quality, max_duration
+            )
+
+    def stop_youtube_stream(self, process: subprocess.Popen, timeout: int = 10) -> bool:
+        """Alias de stop_recording — arrête proprement le stream double sortie."""
+        return self.stop_recording(process, timeout)
+
+    # =========================================================================
+
     def start_recording(self, camera_url: str, output_path: str,
                         camera_type: str = 'rtsp', quality: str = 'medium',
                         max_duration: int = 3600) -> subprocess.Popen:

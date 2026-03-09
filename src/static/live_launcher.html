@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+    <title>🔴 Lancer un Live — Spovio</title>
+    <link rel="icon" type="image/png" href="/static/spovio-favicon.png" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Orbitron:wght@700;900&display=swap"
+        rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        :root {
+            --bg: #080d18;
+            --card: #111827;
+            --accent: #3b82f6;
+            --green: #10b981;
+            --red: #ef4444;
+            --yellow: #f59e0b;
+            --text: #f1f5f9;
+            --muted: #64748b;
+            --border: rgba(255, 255, 255, .08);
+            --r: 16px;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            padding: 14px;
+            max-width: 480px;
+            margin: auto
+        }
+
+        header {
+            text-align: center;
+            padding: 10px 0 20px
+        }
+
+        header small {
+            font-size: 11px;
+            color: var(--muted);
+            letter-spacing: 3px;
+            text-transform: uppercase
+        }
+
+        header h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: clamp(16px, 5vw, 22px);
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .4)
+        }
+
+        .card h3 {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px
+        }
+
+        .field {
+            margin-bottom: 10px
+        }
+
+        .field label {
+            display: block;
+            font-size: 10px;
+            color: var(--muted);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: .5px
+        }
+
+        .field input,
+        .field select {
+            width: 100%;
+            padding: 10px 12px;
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 13px;
+            outline: none
+        }
+
+        .field input:focus,
+        .field select:focus {
+            border-color: var(--accent)
+        }
+
+        select option {
+            background: #111827
+        }
+
+        /* Camera preview */
+        #cam-preview {
+            width: 100%;
+            border-radius: 10px;
+            background: #000;
+            display: none;
+            margin-bottom: 10px;
+            max-height: 220px;
+            object-fit: contain
+        }
+
+        /* Bouton live */
+        .btn-live {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: none;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: .5px;
+            transition: transform .1s, box-shadow .2s
+        }
+
+        .btn-live:active {
+            transform: scale(.97)
+        }
+
+        .btn-live.start {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: #fff;
+            box-shadow: 0 4px 20px rgba(239, 68, 68, .4)
+        }
+
+        .btn-live.stop {
+            background: linear-gradient(135deg, #64748b, #475569);
+            color: #fff
+        }
+
+        /* Lien partageable */
+        #link-section {
+            display: none
+        }
+
+        .link-box {
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center
+        }
+
+        .link-box input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text);
+            font-size: 12px;
+            outline: none
+        }
+
+        .link-box button {
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: none;
+            background: var(--accent);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap
+        }
+
+        /* QR-like big link */
+        .watch-url {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--accent);
+            word-break: break-all;
+            line-height: 1.4
+        }
+
+        /* Status */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 12px;
+            margin-bottom: 12px
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0
+        }
+
+        .dot.red {
+            background: var(--red);
+            box-shadow: 0 0 6px var(--red)
+        }
+
+        .dot.green {
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green)
+        }
+
+        .dot.yellow {
+            background: var(--yellow);
+            box-shadow: 0 0 6px var(--yellow)
+        }
+
+        /* Arbitre link */
+        .arb-link {
+            display: block;
+            text-align: center;
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 12px;
+            text-decoration: none
+        }
+
+        .arb-link:hover {
+            color: var(--text)
+        }
+
+        /* Snack */
+        #snack {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: var(--text);
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity .3s;
+            pointer-events: none;
+            z-index: 9999;
+            border: 1px solid var(--border)
+        }
+
+        #snack.show {
+            opacity: 1
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <img src="/static/spovio-logo.png" alt="Spovio" style="height:36px;margin-bottom:6px" />
+        <small>Spovio</small>
+        <h1>🔴 Lancer un Live</h1>
+    </header>
+
+    <!-- Status -->
+    <div class="status-bar">
+        <div class="dot yellow" id="statusDot"></div>
+        <span id="statusTxt">Prêt à diffuser</span>
+    </div>
+
+    <!-- Config du live -->
+    <div class="card" id="config-section">
+        <h3>⚙️ Configuration</h3>
+
+        <div class="field">
+            <label>Sélectionner un terrain (auto-remplissage)</label>
+            <select id="court-select" onchange="selectCourt()">
+                <option value="">-- Saisie manuelle ou proxy local --</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label>URL Caméra (MJPEG / RTSP)</label>
+            <input type="text" id="camera-url" placeholder="http://77.222.181.11:8080/mjpg/video.mjpg" />
+        </div>
+
+        <img id="cam-preview" alt="Aperçu caméra" />
+
+        <div class="field">
+            <label>Nom Joueur / Équipe A</label>
+            <input type="text" id="team-a" placeholder="Ex: Garcia / Fernandez" value="Équipe A" />
+        </div>
+        <div class="field">
+            <label>Nom Joueur / Équipe B</label>
+            <input type="text" id="team-b" placeholder="Ex: Martin / Lopez" value="Équipe B" />
+        </div>
+        <div class="field">
+            <label>URL Logo club (optionnel)</label>
+            <input type="text" id="logo-url" placeholder="https://..." />
+        </div>
+
+        <button class="btn-live start" id="btnLive" onclick="toggleLive()">
+            🔴 Lancer le Live
+        </button>
+    </div>
+
+    <!-- Lien partageable (visible après lancement) -->
+    <div class="card" id="link-section">
+        <h3>🔗 Lien de diffusion</h3>
+        <div class="link-box">
+            <input type="text" id="watch-link" readonly />
+            <button onclick="copyLink()">Copier</button>
+        </div>
+        <div class="watch-url" id="watch-url-big"></div>
+
+        <button class="btn-live stop" style="margin-top:14px" onclick="toggleLive()">
+            ⏹ Arrêter le Live
+        </button>
+
+        <a href="/arbitre" class="arb-link">⚖️ Ouvrir le tableau arbitre →</a>
+        <a href="/arbitre" class="arb-link" target="_blank" style="margin-top:4px">↗ Ouvrir dans un nouvel onglet</a>
+    </div>
+
+    <div id="snack"></div>
+
+    <script>
+        const API = '';
+        let liveActive = false;
+        let liveCode = null;
+
+        function snack(msg, c = '#1e293b') {
+            const el = document.getElementById('snack');
+            el.textContent = msg; el.style.borderColor = c; el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 3000);
+        }
+
+        // ── Charger les terrains ──
+        async function loadCourts() {
+            try {
+                const r = await fetch(API + '/api/live/courts');
+                if (r.ok) {
+                    const d = await r.json();
+                    const sel = document.getElementById('court-select');
+                    d.courts.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.camera_url || '';
+                        opt.textContent = `${c.name} ${c.camera_url ? '' : '(⚠️ Pas de caméra)'}`;
+                        sel.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.error("Erreur terrains", e);
+            }
+        }
+
+        function selectCourt() {
+            const url = document.getElementById('court-select').value;
+            if (url) {
+                document.getElementById('camera-url').value = url;
+            }
+        }
+
+        // ── Toggle Live ──
+        async function toggleLive() {
+            if (!liveActive) {
+                const cameraUrl = document.getElementById('camera-url').value.trim();
+                const teamA = document.getElementById('team-a').value.trim() || 'Équipe A';
+                const teamB = document.getElementById('team-b').value.trim() || 'Équipe B';
+                const logoUrl = document.getElementById('logo-url').value.trim();
+
+                if (!cameraUrl) { snack('⚠️ Entrez l\'URL de la caméra', '#f59e0b'); return; }
+
+                try {
+                    const r = await fetch(API + '/api/live/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ camera_url: cameraUrl, team_a: teamA, team_b: teamB, logo_url: logoUrl })
+                    });
+                    const d = await r.json();
+                    if (d.ok) {
+                        liveActive = true;
+                        liveCode = d.code;
+                        updateUI(d.watch_url);
+                        snack('🔴 Live démarré ! Lien copié', '#ef4444');
+                        navigator.clipboard.writeText(d.watch_url).catch(() => { });
+                    } else {
+                        snack('❌ ' + (d.error || 'Erreur'), '#ef4444');
+                    }
+                } catch (e) {
+                    snack('❌ Erreur réseau : ' + e.message, '#ef4444');
+                }
+            } else {
+                try {
+                    await fetch(API + '/api/live/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code: liveCode })
+                    });
+                } catch { }
+                liveActive = false; liveCode = null;
+                document.getElementById('link-section').style.display = 'none';
+                document.getElementById('config-section').style.display = 'block';
+                document.getElementById('statusDot').className = 'dot yellow';
+                document.getElementById('statusTxt').textContent = 'Live arrêté';
+                snack('⏹ Live arrêté', '#64748b');
+            }
+        }
+
+        function updateUI(watchUrl) {
+            document.getElementById('watch-link').value = watchUrl;
+            document.getElementById('watch-url-big').textContent = watchUrl;
+            document.getElementById('link-section').style.display = 'block';
+            document.getElementById('config-section').style.display = 'none';
+            document.getElementById('statusDot').className = 'dot red';
+            document.getElementById('statusTxt').textContent = '🔴 EN DIRECT — Code: ' + liveCode;
+        }
+
+        function copyLink() {
+            const url = document.getElementById('watch-link').value;
+            navigator.clipboard.writeText(url).then(() => snack('✅ Lien copié !', '#10b981'));
+        }
+
+        // ── Vérifier si live déjà actif ──
+        async function checkExisting() {
+            try {
+                const r = await fetch(API + '/api/live/my');
+                if (r.ok) {
+                    const d = await r.json();
+                    if (d.live && d.live.active) {
+                        liveActive = true;
+                        liveCode = d.live.code;
+                        const host = location.host;
+                        updateUI(`http://${host}/watch/${liveCode}`);
+                    }
+                }
+            } catch { }
+        }
+
+        loadCourts();
+        checkExisting();
+    </script>
+</body>
+
+</html>

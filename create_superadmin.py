@@ -5,9 +5,22 @@ Cela garantit que l'énumération UserRole est correctement gérée
 """
 import sys
 import os
+from pathlib import Path
 
 # Ajouter le répertoire parent au path pour les imports
 sys.path.insert(0, '/app')
+
+# Chargement des variables d'environnement depuis .env si le fichier existe
+project_root = Path(__file__).parent.absolute()
+env_file = project_root / '.env'
+if env_file.exists():
+    print(f"📁 Chargement des variables d'environnement depuis {env_file}")
+    with open(env_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ.setdefault(key.strip(), value.strip())
 
 from werkzeug.security import generate_password_hash
 from src.models.user import User, UserRole, UserStatus

@@ -1,0 +1,9 @@
+@echo off
+echo Adding all changes...
+git add .
+echo Committing changes...
+git commit -m "update backend"
+echo Pushing to GitHub...
+git push
+echo Done.
+pause

@@ -116,6 +116,7 @@ class Club(db.Model):
     address = db.Column(db.String(255), nullable=True)
     phone_number = db.Column(db.String(20), nullable=True)
     email = db.Column(db.String(120), nullable=True)
+    logo = db.Column(db.String(255), nullable=True)
     credits_balance = db.Column(db.Integer, default=0, nullable=False)  # Nouveau champ pour gérer le solde de crédits du club
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -126,6 +127,7 @@ class Club(db.Model):
         return {
             'id': self.id, 'name': self.name, 'address': self.address,
             'phone_number': self.phone_number, 'email': self.email,
+            'logo': self.logo,
             'credits_balance': self.credits_balance,  # Inclure le solde de crédits
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'overlays': [overlay.to_dict() for overlay in self.overlays] if hasattr(self, 'overlays') else []
@@ -166,6 +168,7 @@ class Court(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     qr_code = db.Column(db.String(100), unique=True, nullable=False)
+    short_code = db.Column(db.String(10), unique=True, nullable=True) # Nouveau : code court pour saisie manuelle
     camera_url = db.Column(db.String(255), nullable=False)
     club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
     
@@ -180,6 +183,7 @@ class Court(db.Model):
         return {
             "id": self.id, "name": self.name, "club_id": self.club_id,
             "camera_url": self.camera_url, "qr_code": self.qr_code,
+            "short_code": self.short_code,
             "is_recording": self.is_recording,
             "recording_session_id": self.recording_session_id,
             "current_recording_id": self.current_recording_id,
@@ -265,7 +269,7 @@ class Video(db.Model):
             
             # Simplicité pour frontend - une vidéo est visible si elle est prête ET pas supprimée du cloud
             "is_watchable": self.bunny_video_id is not None and self.cloud_deleted_at is None and self.processing_status == 'ready',
-            "is_processing": self.processing_status in ['uploading', 'processing'],
+            "is_processing": self.processing_status in ['pending', 'uploading', 'processing'],
         }
 
 class HighlightVideo(db.Model):
@@ -301,6 +305,8 @@ class HighlightVideo(db.Model):
             "duration": self.duration,
             "clips_count": self.clips_count,
             "status": self.generation_status,
+            "is_processing": self.generation_status in ['pending', 'processing', 'downloading', 'uploading'],
+            "is_watchable": self.generation_status == 'completed' and self.bunny_video_id is not None,
             "highlights_data": json.loads(self.highlights_data) if self.highlights_data else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None
@@ -340,6 +346,7 @@ class HighlightJob(db.Model):
             "user_id": self.user_id,
             "status": self.status,
             "progress": self.progress,
+            "is_processing": self.status in ['queued', 'downloading', 'processing', 'uploading'],
             "error_message": self.error_message,
             "target_duration": self.target_duration,
             "highlight_video_id": self.highlight_video_id,
@@ -403,6 +410,8 @@ class UserClip(db.Model):
             "storage_download_url": self.storage_download_url,
             "is_downloadable": self.storage_download_url is not None,
             "status": self.status,
+            "is_processing": self.status in ['pending', 'processing', 'uploading'],
+            "is_watchable": self.status == 'completed' and self.bunny_video_id is not None,
             "error_message": self.error_message,
             "share_count": self.share_count,
             "download_count": self.download_count,

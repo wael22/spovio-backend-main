@@ -70,9 +70,9 @@ class BunnyStatusUpdater:
             return
         
         with self.app.app_context():
-            # Récupérer toutes les vidéos en cours de processing
+            # Récupérer toutes les vidéos en cours de processing OU en attente (si ID Bunny existe)
             processing_videos = Video.query.filter(
-                Video.processing_status.in_(['uploading', 'processing']),
+                Video.processing_status.in_(['uploading', 'processing', 'pending']),
                 Video.bunny_video_id.isnot(None)
             ).all()
             
@@ -83,62 +83,133 @@ class BunnyStatusUpdater:
             
             for video in processing_videos:
                 try:
-                    # Récupérer le statut de la vidéo depuis Bunny
-                    check_url = f"{self.api_base_url}/videos/{video.bunny_video_id}"
-                    response = requests.get(check_url, headers=self.headers, timeout=10)
-                    
-                    if response.status_code == 200:
-                        video_info = response.json()
-                        status = video_info.get("status")
-                        
-                        # Statuts Bunny: 0=Created, 1=Uploaded, 2=Processing, 3=Encoding, 4=Finished, 5=Failed
-                        if status == 4:  # Finished
-                            video.processing_status = 'ready'
-                            
-                            # 🆕 Sync duration from Bunny (actual video length)
-                            real_duration = video_info.get("length")
-                            if real_duration and real_duration > 0:
-                                old_duration = video.duration
-                                video.duration = real_duration
-                                logger.info(f"⏱️ Durée corrigée: {old_duration}s -> {real_duration}s")
-                            
-                            # 🆕 Créer une notification pour informer l'utilisateur
-                            try:
-                                from src.models.notification import Notification, NotificationType
-                                
-                                Notification.create_notification(
-                                    user_id=video.user_id,
-                                    notification_type=NotificationType.VIDEO,
-                                    title="🎬 Votre vidéo est prête !",
-                                    message=f"La vidéo '{video.title}' a été traitée avec succès et est maintenant disponible.",
-                                    link="/dashboard"
-                                )
-                                logger.info(f"✅ Notification créée pour user {video.user_id} - vidéo {video.id} prête")
-                            except Exception as notif_error:
-                                logger.error(f"❌ Erreur création notification: {notif_error}")
-                            
-                            db.session.commit()
-                            logger.info(f"✅ Vidéo {video.id} prête: {video.title}")
-                        elif status == 5:  # Failed
-                            video.processing_status = 'failed'
-                            db.session.commit()
-                            logger.error(f"❌ Vidéo {video.id} échec encodage: {video.title}")
-                        elif status in [2, 3]:  # Processing, Encoding
-                            video.processing_status = 'processing'
-                            db.session.commit()
-                    elif response.status_code == 404:
-                        # Vidéo n'existe pas/plus sur Bunny CDN -> marquer comme failed et arrêter de vérifier
-                        video.processing_status = 'failed'
-                        db.session.commit()
-                        logger.warning(f"⚠️ Vidéo {video.id} introuvable sur Bunny (404) - marquée comme failed")
-                    else:
-                        logger.warning(f"⚠️ Impossible de vérifier vidéo {video.id}: HTTP {response.status_code}")
-                        
+                    self._sync_video_status(video, db)
                 except Exception as e:
                     logger.error(f"❌ Erreur vérification vidéo {video.id}: {e}")
-                
-                # Petit délai entre chaque requête pour ne pas surcharger l'API
                 time.sleep(0.5)
+
+            # 🆕 Vérifier les clips utilisateur
+            from src.models.user import UserClip
+            processing_clips = UserClip.query.filter(
+                UserClip.status.in_(['processing', 'pending', 'uploading']),
+                UserClip.bunny_video_id.isnot(None)
+            ).all()
+
+            for clip in processing_clips:
+                try:
+                    self._sync_clip_status(clip, db)
+                except Exception as e:
+                    logger.error(f"❌ Erreur vérification clip {clip.id}: {e}")
+                time.sleep(0.5)
+
+            # 🆕 Vérifier les highlights
+            from src.models.user import HighlightVideo
+            processing_highlights = HighlightVideo.query.filter(
+                HighlightVideo.generation_status.in_(['processing', 'pending', 'uploading']),
+                HighlightVideo.bunny_video_id.isnot(None)
+            ).all()
+
+            for highlight in processing_highlights:
+                try:
+                    self._sync_highlight_status(highlight, db)
+                except Exception as e:
+                    logger.error(f"❌ Erreur vérification highlight {highlight.id}: {e}")
+                time.sleep(0.5)
+
+    def _sync_video_status(self, video, db):
+        """Synchronise le statut d'une vidéo avec Bunny CDN"""
+        check_url = f"{self.api_base_url}/videos/{video.bunny_video_id}"
+        response = requests.get(check_url, headers=self.headers, timeout=10)
+        
+        if response.status_code == 200:
+            video_info = response.json()
+            status = video_info.get("status")
+            
+            if status == 4:  # Finished
+                if video.processing_status != 'ready':
+                    video.processing_status = 'ready'
+                    real_duration = video_info.get("length")
+                    if real_duration and real_duration > 0:
+                        video.duration = real_duration
+                    
+                    try:
+                        from src.models.notification import Notification, NotificationType
+                        Notification.create_notification(
+                            user_id=video.user_id,
+                            notification_type=NotificationType.VIDEO,
+                            title="🎬 Votre vidéo est prête !",
+                            message=f"La vidéo '{video.title}' a été traitée avec succès.",
+                            link="/dashboard"
+                        )
+                    except: pass
+                    db.session.commit()
+            elif status == 5:  # Failed
+                video.processing_status = 'failed'
+                db.session.commit()
+            elif status in [0, 1, 2, 3] and video.processing_status != 'processing':
+                video.processing_status = 'processing'
+                db.session.commit()
+        elif response.status_code == 404:
+            video.processing_status = 'failed'
+            db.session.commit()
+
+    def _sync_clip_status(self, clip, db):
+        """Synchronise le statut d'un clip utilisateur avec Bunny CDN"""
+        check_url = f"{self.api_base_url}/videos/{clip.bunny_video_id}"
+        response = requests.get(check_url, headers=self.headers, timeout=10)
+        
+        if response.status_code == 200:
+            video_info = response.json()
+            status = video_info.get("status")
+            
+            if status == 4:  # Finished
+                if clip.status != 'completed':
+                    clip.status = 'completed'
+                    clip.completed_at = datetime.utcnow()
+                    try:
+                        from src.models.notification import Notification, NotificationType
+                        Notification.create_notification(
+                            user_id=clip.user_id,
+                            notification_type=NotificationType.VIDEO_READY,
+                            title="🎬 Votre clip est prêt !",
+                            message=f"Le clip '{clip.title}' est prêt.",
+                            link="/dashboard?tab=clips"
+                        )
+                    except: pass
+                    db.session.commit()
+            elif status == 5:
+                clip.status = 'failed'
+                db.session.commit()
+            elif status in [0, 1, 2, 3] and clip.status != 'processing':
+                clip.status = 'processing'
+                db.session.commit()
+        elif response.status_code == 404:
+            clip.status = 'failed'
+            db.session.commit()
+
+    def _sync_highlight_status(self, highlight, db):
+        """Synchronise le statut d'un highlight avec Bunny CDN"""
+        check_url = f"{self.api_base_url}/videos/{highlight.bunny_video_id}"
+        response = requests.get(check_url, headers=self.headers, timeout=10)
+        
+        if response.status_code == 200:
+            video_info = response.json()
+            status = video_info.get("status")
+            
+            if status == 4:  # Finished
+                if highlight.generation_status != 'completed':
+                    highlight.generation_status = 'completed'
+                    highlight.completed_at = datetime.utcnow()
+                    db.session.commit()
+            elif status == 5:
+                highlight.generation_status = 'failed'
+                db.session.commit()
+            elif status in [0, 1, 2, 3] and highlight.generation_status != 'processing':
+                highlight.generation_status = 'processing'
+                db.session.commit()
+        elif response.status_code == 404:
+            highlight.generation_status = 'failed'
+            db.session.commit()
 
 
 # Instance globale

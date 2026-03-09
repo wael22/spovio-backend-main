@@ -36,8 +36,9 @@ google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
 
-# Rate Limiting
+# Rate Limiting & Caching
 redis>=5.0.0
+Flask-Caching>=2.1.0
 
 # Paiement
 stripe>=8.0.0
@@ -58,3 +59,7 @@ flask-mail>=0.9.1
 
 # Production server
 gunicorn>=21.2.0
+
+# Video Proxy Server
+fastapi>=0.109.0
+uvicorn>=0.27.0

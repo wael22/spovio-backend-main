@@ -7,6 +7,7 @@ from src.models.notification import Notification, NotificationType, SupportMessa
 from werkzeug.security import generate_password_hash
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased, joinedload
+from sqlalchemy import func
 import uuid
 import logging
 import json
@@ -673,13 +674,52 @@ def create_court(club_id):
     if not require_super_admin(): return jsonify({"error": "Accès non autorisé"}), 403
     data = request.get_json()
     try:
-        new_court = Court(name=data["name"], camera_url=data["camera_url"], club_id=club_id, qr_code=str(uuid.uuid4()))
+        # Generate a unique 4-character short code
+        import string
+        def generate_short_code():
+            return ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        
+        short_code = generate_short_code()
+        # Keep generating until we find a unique one
+        while Court.query.filter_by(short_code=short_code).first():
+            short_code = generate_short_code()
+
+        new_court = Court(
+            name=data["name"], 
+            camera_url=data["camera_url"], 
+            club_id=club_id, 
+            qr_code=str(uuid.uuid4()),
+            short_code=short_code
+        )
         db.session.add(new_court)
         db.session.commit()
         return jsonify({"message": "Terrain créé", "court": new_court.to_dict()}), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Erreur lors de la création"}), 500
+
+@admin_bp.route("/courts/<int:court_id>/regenerate-codes", methods=["POST"])
+def regenerate_court_codes(court_id):
+    if not require_super_admin(): return jsonify({"error": "Accès non autorisé"}), 403
+    court = Court.query.get_or_404(court_id)
+    try:
+        import string
+        def generate_short_code():
+            return ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        
+        short_code = generate_short_code()
+        while Court.query.filter_by(short_code=short_code).first():
+            short_code = generate_short_code()
+
+        court.qr_code = str(uuid.uuid4())
+        court.short_code = short_code
+        
+        db.session.commit()
+        return jsonify({"message": "Codes régénérés avec succès", "court": court.to_dict()}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Erreur lors de la régénération des codes: {e}")
+        return jsonify({"error": "Erreur lors de la régénération des codes"}), 500
 
 @admin_bp.route("/courts/<int:court_id>", methods=["PUT"])
 def update_court(court_id):
@@ -701,12 +741,25 @@ def update_court(court_id):
             if existing_court:
                 return jsonify({"error": f"Ce code QR est déjà utilisé par le terrain '{existing_court.name}'"}), 400
             court.qr_code = new_qr_code
+            
+        if "short_code" in data:
+            new_short_code = list(str(data["short_code"]).strip().upper())[:4]
+            new_short_code = "".join(new_short_code)
+            if new_short_code:
+                existing_court = Court.query.filter(
+                    func.upper(Court.short_code) == new_short_code,
+                    Court.id != court_id
+                ).first()
+                if existing_court:
+                    return jsonify({"error": f"Ce Code Direct est déjà utilisé par le terrain '{existing_court.name}'"}), 400
+                court.short_code = new_short_code
         
         db.session.commit()
         return jsonify({"message": "Terrain mis à jour", "court": court.to_dict()}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Erreur lors de la mise à jour"}), 500
+        logger.error(f"❌ Erreur lors de la mise à jour du terrain {court_id}: {e}")
+        return jsonify({"error": f"Erreur lors de la mise à jour: {str(e)}"}), 500
 
 @admin_bp.route("/courts/<int:court_id>", methods=["DELETE"])
 def delete_court(court_id):
@@ -891,6 +944,10 @@ def admin_stop_recording(recording_id):
                 from src.services.bunny_storage_service import bunny_storage_service
                 logger.info(f"🚀 Début upload vers Bunny CDN: {video_file_url}")
                 
+                # 🆕 Mettre à jour le statut avant l'upload
+                new_video.processing_status = 'uploading'
+                db.session.commit()
+                
                 upload_id = bunny_storage_service.queue_upload(
                     local_path=video_file_url,
                     title=new_video.title,
@@ -911,6 +968,8 @@ def admin_stop_recording(recording_id):
                 upload_status = bunny_storage_service.get_upload_status(upload_id)
                 if upload_status and upload_status.get('bunny_video_id'):
                     new_video.bunny_video_id = upload_status['bunny_video_id']
+                    # ✨ NEW: Update processing status so updater picks it up
+                    new_video.processing_status = 'processing'
                     # ✨ NEW: Also update file_url to Bunny CDN URL
                     from src.config.bunny_config import BUNNY_CONFIG
                     cdn_hostname = BUNNY_CONFIG.get('cdn_hostname', 'vz-9b857324-07d.b-cdn.net')
@@ -932,12 +991,12 @@ def admin_stop_recording(recording_id):
             
             Notification.create_notification(
                 user_id=new_video.user_id,
-                notification_type=NotificationType.VIDEO,
-                title="Vidéo prête !",
-                message=f"Votre enregistrement est terminé et disponible ({duration_seconds}s)",
+                notification_type=NotificationType.RECORDING_STOPPED,
+                title="Enregistrement terminé",
+                message=f"Votre session a été arrêtée par un administrateur. La vidéo est en cours de traitement.",
                 link="/player"  # Lien vers le dashboard
             )
-            logger.info(f"✅ Notification créée pour user {new_video.user_id} - vidéo #{new_video.id}")
+            logger.info(f"✅ Notification 'Arrêt' créée pour user {new_video.user_id}")
         except Exception as notif_error:
             logger.error(f"❌ Erreur création notification: {notif_error}")
         
@@ -3087,7 +3146,7 @@ def retry_bunny_upload(video_id):
         )
         
         # Mettre à jour le statut en base
-        video.processing_status = 'pending'
+        video.processing_status = 'processing'
         db.session.commit()
         
         logger.info(f"✅ Upload programmé pour vidéo {video_id} (tâche: {task_id})")
@@ -3152,7 +3211,7 @@ def update_bunny_url(video_id):
             video.file_url = f"https://{cdn_hostname}/{bunny_video_id}/playlist.m3u8"
         
         # Mettre à jour le statut
-        video.processing_status = 'ready'
+        video.processing_status = 'processing'
         video.cdn_migrated_at = datetime.utcnow()
         
         db.session.commit()
@@ -3276,7 +3335,7 @@ def create_manual_video():
             bunny_video_id=bunny_video_id,
             file_url=bunny_url,
             duration=duration,  # Peut être None si non fournie et non détectée
-            processing_status='ready',  # Directement prête
+            processing_status='processing',  # On laisse l'updater vérifier si elle est vraiment prête
             cdn_migrated_at=datetime.utcnow(),
             is_unlocked=True,  # Débloquée par défaut pour vidéos manuelles
             credits_cost=0,  # Pas de coût pour vidéos manuelles
@@ -3346,3 +3405,131 @@ def get_club_history_admin(club_id):
     except Exception as e:
         logger.error(f"Erreur lors de la récupération de l'historique club par admin: {e}")
         return jsonify({"error": "Erreur serveur"}), 500
+
+
+# --- GESTION DES LOGOS ET AVATARS (SUPER ADMIN) ---
+
+def _get_avatars_folder():
+    """Retourne le dossier d'upload des avatars/logos (compatible Docker)."""
+    docker_path = '/app/src/static/uploads/avatars'
+    if os.path.isdir('/app/src'):
+        os.makedirs(docker_path, exist_ok=True)
+        return docker_path
+    # Chemin local
+    base_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'uploads', 'avatars')
+    os.makedirs(base_path, exist_ok=True)
+    return base_path
+
+
+@admin_bp.route("/clubs/<int:club_id>/upload-logo", methods=["POST"])
+def admin_upload_club_logo(club_id):
+    """Upload ou remplace le logo d'un club (super admin uniquement)."""
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+
+    club = Club.query.get_or_404(club_id)
+
+    if 'logo' not in request.files:
+        return jsonify({"error": "Aucun fichier 'logo' fourni"}), 400
+
+    file = request.files['logo']
+    if not file or not file.filename:
+        return jsonify({"error": "Fichier vide"}), 400
+
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({"error": f"Format non autorisé. Utilisez: {', '.join(allowed_extensions)}"}), 400
+
+    try:
+        from werkzeug.utils import secure_filename
+        filename = secure_filename(file.filename)
+        unique_filename = f"club_{club_id}_{uuid.uuid4().hex[:8]}.{ext}"
+        upload_folder = _get_avatars_folder()
+        file_path = os.path.join(upload_folder, unique_filename)
+        file.save(file_path)
+
+        club.logo = f"/static/uploads/avatars/{unique_filename}"
+        db.session.commit()
+
+        logger.info(f"✅ Logo club {club_id} mis à jour: {club.logo}")
+        return jsonify({
+            "message": "Logo mis à jour avec succès",
+            "logo": club.logo,
+            "logo_url": f"/api/static/avatars/{unique_filename}",
+            "club": club.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Erreur upload logo club {club_id}: {e}")
+        return jsonify({"error": f"Erreur upload: {str(e)}"}), 500
+
+
+@admin_bp.route("/users/<int:user_id>/upload-avatar", methods=["POST"])
+def admin_upload_user_avatar(user_id):
+    """Upload ou remplace l'avatar d'un joueur (super admin uniquement)."""
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+
+    user = User.query.get_or_404(user_id)
+
+    if 'avatar' not in request.files:
+        return jsonify({"error": "Aucun fichier 'avatar' fourni"}), 400
+
+    file = request.files['avatar']
+    if not file or not file.filename:
+        return jsonify({"error": "Fichier vide"}), 400
+
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({"error": f"Format non autorisé. Utilisez: {', '.join(allowed_extensions)}"}), 400
+
+    try:
+        from werkzeug.utils import secure_filename
+        filename = secure_filename(file.filename)
+        unique_filename = f"user_{user_id}_{uuid.uuid4().hex[:8]}.{ext}"
+        upload_folder = _get_avatars_folder()
+        file_path = os.path.join(upload_folder, unique_filename)
+        file.save(file_path)
+
+        user.avatar = f"/static/uploads/avatars/{unique_filename}"
+        db.session.commit()
+
+        logger.info(f"✅ Avatar utilisateur {user_id} mis à jour: {user.avatar}")
+        return jsonify({
+            "message": "Avatar mis à jour avec succès",
+            "avatar": user.avatar,
+            "avatar_url": f"/api/static/avatars/{unique_filename}",
+            "user": user.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Erreur upload avatar user {user_id}: {e}")
+        return jsonify({"error": f"Erreur upload: {str(e)}"}), 500
+
+
+@admin_bp.route("/clubs/<int:club_id>/logo", methods=["DELETE"])
+def admin_delete_club_logo(club_id):
+    """Supprime le logo d'un club (super admin uniquement)."""
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+
+    club = Club.query.get_or_404(club_id)
+    club.logo = None
+    db.session.commit()
+    return jsonify({"message": "Logo supprimé", "club": club.to_dict()}), 200
+
+
+@admin_bp.route("/users/<int:user_id>/avatar", methods=["DELETE"])
+def admin_delete_user_avatar(user_id):
+    """Supprime l'avatar d'un utilisateur (super admin uniquement)."""
+    if not require_super_admin():
+        return jsonify({"error": "Accès non autorisé"}), 403
+
+    user = User.query.get_or_404(user_id)
+    user.avatar = None
+    db.session.commit()
+    return jsonify({"message": "Avatar supprimé", "user": user.to_dict()}), 200

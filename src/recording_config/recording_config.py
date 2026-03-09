@@ -11,11 +11,15 @@ class RecordingConfig:
     
     # ==================== CHEMINS ET DOSSIERS ====================
     
-    # Chemin FFmpeg
-    FFMPEG_PATH = r"C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe"
+    # ==================== CHEMINS ET DOSSIERS ====================
     
-    # Dossier racine des vidéos
-    VIDEO_ROOT = Path(r"C:\Users\PC\Videos\PadelVar")
+    # Chemin FFmpeg (Défaut: 'ffmpeg' pour Linux/Docker, override via .env pour Windows)
+    FFMPEG_PATH = os.getenv('FFMPEG_PATH', 'ffmpeg')
+    
+    # Dossier racine des vidéos (Défaut: 'static/videos' relatif pour Docker)
+    # Sur Windows, définir VIDEO_STORAGE_PATH dans .env
+    _default_video_root = Path("static/videos").resolve()
+    VIDEO_ROOT = Path(os.getenv('VIDEO_STORAGE_PATH', _default_video_root))
     
     # Structure: VIDEO_ROOT/<club_id>/<match_id>/tmp/ et /final/
     
@@ -50,6 +54,10 @@ class RecordingConfig:
     # ==================== PARAMÈTRES FFMPEG ====================
     
     # Résolution de sortie (largeur, hauteur auto-calculée)
+    # Si NATIVE_RESOLUTION = True, VIDEO_WIDTH et VIDEO_HEIGHT sont ignorés
+    # La vidéo de sortie aura la même résolution que la source (ex: 5MP -> 5MP)
+    NATIVE_RESOLUTION = True
+    
     VIDEO_WIDTH = 1280
     VIDEO_HEIGHT = -2  # -2 = auto avec préservation aspect ratio
     

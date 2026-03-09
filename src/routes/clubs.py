@@ -10,6 +10,7 @@ import random
 import logging
 from werkzeug.security import generate_password_hash
 from sqlalchemy.orm import joinedload
+from src.extensions import cache
 
 # Logger pour tracer les actions
 logger = logging.getLogger(__name__)
@@ -25,12 +26,14 @@ def get_current_user():
 
 # Route pour récupérer la liste des clubs
 @clubs_bp.route('/', methods=['GET'])
+@cache.cached(timeout=60, query_string=True)
 def get_clubs():
     clubs = Club.query.all()
     return jsonify({'clubs': [club.to_dict() for club in clubs]}), 200
 
 # Route pour récupérer un club spécifique
 @clubs_bp.route('/<int:club_id>', methods=['GET'])
+@cache.cached(timeout=30, query_string=True)
 def get_club(club_id):
     club = Club.query.get_or_404(club_id)
     return jsonify({'club': club.to_dict()}), 200
@@ -451,6 +454,83 @@ def get_club_info():
     except Exception as e:
         print(f"Erreur lors de la récupération des informations du club: {e}")
         return jsonify({'error': 'Erreur lors de la récupération des informations du club'}), 500
+
+# Route pour mettre à jour les informations du club
+@clubs_bp.route('/info', methods=['PUT'])
+def update_club_info():
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Non authentifié'}), 401
+    
+    if user.role != UserRole.CLUB:
+        return jsonify({'error': 'Accès réservé aux clubs'}), 403
+        
+    try:
+        club = Club.query.get(user.club_id)
+        if not club:
+            return jsonify({'error': 'Club non trouvé'}), 404
+            
+        data = request.form
+        
+        # Mise à jour des champs texte
+        if 'name' in data:
+            club.name = data['name']
+        if 'address' in data:
+            club.address = data['address']
+        if 'phone' in data:
+            club.phone_number = data['phone']
+        if 'email' in data:
+            club.email = data['email']
+            
+        # Gestion de l'upload du logo
+        if 'logo' in request.files:
+            file = request.files['logo']
+            if file and file.filename:
+                # Sécuriser le nom de fichier
+                from werkzeug.utils import secure_filename
+                import uuid
+                
+                filename = secure_filename(file.filename)
+                # Utiliser le dossier d'upload centralisé
+                from .admin import _get_avatars_folder
+                upload_folder = _get_avatars_folder()
+                os.makedirs(upload_folder, exist_ok=True)
+                
+                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'png'
+                unique_filename = f"club_logo_{uuid.uuid4().hex[:8]}.{ext}"
+                
+                file_path = os.path.join(upload_folder, unique_filename)
+                file.save(file_path)
+                
+                # URL relative
+                club.logo = f"/static/uploads/avatars/{unique_filename}"
+        
+        db.session.commit()
+        
+        # Log de l'action
+        log_club_action(
+            user_id=user.id,
+            club_id=club.id,
+            action_type='update_info',
+            details={
+                'name': club.name,
+                'address': club.address,
+                'phone': club.phone_number,
+                'email': club.email,
+                'logo_updated': 'logo' in request.files
+            },
+            performed_by_id=user.id
+        )
+        
+        return jsonify({
+            'message': 'Informations mises à jour avec succès',
+            'club': club.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erreur lors de la mise à jour des informations du club: {e}")
+        return jsonify({'error': 'Erreur lors de la mise à jour'}), 500
 
 # Route pour récupérer les terrains du club
 @clubs_bp.route('/courts', methods=['GET'])

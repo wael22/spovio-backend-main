@@ -96,6 +96,13 @@ def create_celery_app(app=None):
                 'task': 'src.tasks.maintenance_tasks.generate_daily_health_report',
                 'schedule': crontab(hour=8, minute=0),
                 'options': {'queue': 'maintenance'}
+            },
+
+            # Nettoyage des vidéos uploadées (toutes les heures)
+            'cleanup-uploaded-videos': {
+                'task': 'src.tasks.maintenance_tasks.cleanup_uploaded_videos',
+                'schedule': crontab(minute=0),
+                'options': {'queue': 'maintenance'}
             }
         }
     )

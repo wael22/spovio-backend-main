@@ -20,7 +20,13 @@ class VideoConfig:
     
     # Chemins
     BASE_DIR = Path(__file__).parent.parent.parent  # Project root
-    VIDEOS_DIR = BASE_DIR / "static" / "videos"
+    
+    # Dossier vidéos (Proxy / V3)
+    # Utilise la variable d'env VIDEO_STORAGE_PATH si définie, sinon défaut 'static/videos'
+    _default_videos_dir = BASE_DIR / "static" / "videos"
+    _env_video_path = os.getenv('VIDEO_STORAGE_PATH')
+    VIDEOS_DIR = Path(_env_video_path) if _env_video_path else _default_videos_dir
+    
     LOGS_DIR = BASE_DIR / "logs" / "video"
     
     # FFmpeg
@@ -35,9 +41,11 @@ class VideoConfig:
     DEFAULT_DURATION_SECONDS = 90 * 60  # 90 minutes
     MAX_CONCURRENT_RECORDINGS = 10
     VIDEO_CODEC = "libx264"
-    VIDEO_PRESET = "veryfast"
+    VIDEO_PRESET = "ultrafast"
     VIDEO_CRF = 23
-    VIDEO_FPS = 25
+    VIDEO_FPS = 20
+    VIDEO_WIDTH = 1920
+    VIDEO_HEIGHT = 1080
     
     # Session settings
     SESSION_TIMEOUT_SECONDS = 7200  # 2 heures

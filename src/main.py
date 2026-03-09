@@ -12,6 +12,7 @@ from flask_jwt_extended import JWTManager
 # Importations relatives corrigées
 from .config import DevelopmentConfig, ProductionConfig, Config
 from .models.database import db
+from .extensions import cache
 from .models.user import User, UserRole
 from .routes.auth import auth_bp
 from .routes.super_admin_auth import super_admin_auth_bp  # 🆕 Authentification super admin avec 2FA
@@ -49,6 +50,8 @@ from .routes.clip_routes import clip_bp  # 🆕 Manual clip creation and social 
 from .routes.public_clip_routes import public_clip_bp  # 🆕 Public clip sharing (no auth required)
 from .routes.tutorial_routes import tutorial_bp  # 🆕 Tutorial system for new players
 from .routes.player_interests import player_interests_bp  # 🆕 Player interests dashboard
+from .routes.arbitre_routes import arbitre_bp  # 🆕 Tableau de bord arbitre
+from .routes.live_routes import live_bp  # 🆕 Live streaming padel
 
 def create_app(config_name=None):
     """
@@ -100,6 +103,15 @@ def create_app(config_name=None):
     migrate = Migrate(app, db)
     jwt = JWTManager(app)
     
+    # Gestion du cache (Fallback vers SimpleCache si Redis est indisponible au démarrage)
+    try:
+        cache.init_app(app)
+        with app.app_context():
+            cache.clear()
+    except Exception as e:
+        print(f"⚠️ Redis indisponible, basculement vers SimpleCache local. Erreur: {e}")
+        cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'})
+    
     # 🍪 Configuration des cookies de session pour OVH (HTTP temporaire)
     # Pour HTTP (IPV4 access), il faut SameSite='Lax' et Secure=False
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'   # Permet le fonctionnement en HTTP
@@ -123,8 +135,14 @@ def create_app(config_name=None):
         if not origin:
             return True  # Allow requests without origin
         
-        # Allow production Vercel URL
-        if origin == 'https://spovio-frontend.vercel.app':
+        # Allow production Vercel URL and Custom Domains
+        if origin in [
+            'https://spovio-frontend.vercel.app',
+            'https://spovio.net',
+            'https://www.spovio.net',
+            'http://spovio.net',
+            'http://www.spovio.net'
+        ]:
             return True
         
         # Allow ALL Vercel preview URLs for spovio-frontend
@@ -232,7 +250,14 @@ def create_app(config_name=None):
     app.register_blueprint(public_clip_bp)  # 🆕 Public clip sharing (no auth, root level)
     app.register_blueprint(tutorial_bp, url_prefix='/api/tutorial')  # 🆕 Tutorial system
     app.register_blueprint(player_interests_bp, url_prefix='/api')  # 🆕 Player interests
+    app.register_blueprint(arbitre_bp)  # 🆕 Tableau de bord arbitre (/arbitre + /api/arbitre/*)
+    app.register_blueprint(live_bp)     # 🆕 Live streaming (/live + /watch/<code> + /api/live/*)
     app.register_blueprint(password_reset_bp)
+    
+    # 🆕 Video Recovery System
+    from .routes.recovery import recovery_bp
+    app.register_blueprint(recovery_bp)
+
     # Frontend blueprint en dernier pour éviter d'intercepter les routes API
     app.register_blueprint(frontend_bp)
     
@@ -271,24 +296,46 @@ def create_app(config_name=None):
 
     
 
+    def get_avatar_dir():
+        """Retourne le dossier d'avatars en utilisant un chemin absolu robuste."""
+        # En Docker: workdir est /app, src est dans /app/src
+        docker_path = '/app/src/static/uploads/avatars'
+        if os.path.isdir('/app/src'):
+            return docker_path
+        # En local: app.root_path pointe vers le dossier 'src'
+        return os.path.join(app.root_path, 'static', 'uploads', 'avatars')
+
     @app.route('/api/static/avatars/<path:filename>')
     def serve_avatar(filename):
-        """Serveur d'avatar manuel pour garantir les headers CORS"""
-        import os
+        """Sert un avatar ou logo — route utilisée par getAssetUrl() du frontend."""
         from flask import send_from_directory, make_response
-        
-        # Chemin absolu vers le dossier d'avatars
-        avatar_dir = os.path.join(app.root_path, 'static/uploads/avatars')
-        
-        response = make_response(send_from_directory(avatar_dir, filename))
-        
-        # Forcer les headers CORS et CORP (Cross-Origin Resource Policy)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        
-        print(f"🖼️ Serving avatar manual: {filename}")
-        return response
+        avatar_dir = get_avatar_dir()
+        os.makedirs(avatar_dir, exist_ok=True)
+        try:
+            response = make_response(send_from_directory(avatar_dir, filename))
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+            response.headers['Cache-Control'] = 'public, max-age=86400'
+            return response
+        except Exception as e:
+            print(f"❌ Avatar non trouvé: {filename} — {e}")
+            return jsonify({'error': 'Fichier non trouvé'}), 404
+
+    @app.route('/api/static/uploads/avatars/<path:filename>')
+    def serve_avatar_full_path(filename):
+        """Sert les logos club via le chemin complet /static/uploads/avatars/ (non transformé par getAssetUrl)."""
+        from flask import send_from_directory, make_response
+        avatar_dir = get_avatar_dir()
+        os.makedirs(avatar_dir, exist_ok=True)
+        try:
+            response = make_response(send_from_directory(avatar_dir, filename))
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+            response.headers['Cache-Control'] = 'public, max-age=86400'
+            return response
+        except Exception as e:
+            print(f"❌ Logo non trouvé: {filename} — {e}")
+            return jsonify({'error': 'Fichier non trouvé'}), 404
 
     @app.route('/')
     def index():

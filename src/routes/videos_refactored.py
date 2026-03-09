@@ -1001,8 +1001,15 @@ def scan_qr_code():
     if not qr_code:
         return api_response(error="QR code requis", status=400)
     
-    # Rechercher le terrain correspondant au QR code
-    court = Court.query.filter_by(qr_code=qr_code).first()
+    processed_code = qr_code
+    if '/c/' in qr_code:
+        processed_code = qr_code.split('/c/')[-1].split('?')[0].split('#')[0]
+    
+    from sqlalchemy import func
+    court = Court.query.filter(
+        (Court.qr_code == processed_code) | 
+        (func.upper(Court.short_code) == processed_code.upper())
+    ).first()
     if not court:
         return api_response(error="QR code invalide ou terrain non trouvé", status=404)
     
@@ -1790,8 +1797,16 @@ def scan_qr_code():
         if not qr_code:
             return jsonify({'error': 'QR code requis'}), 400
         
-        # Rechercher le terrain correspondant au QR code
-        court = Court.query.filter_by(qr_code=qr_code).first()
+        # Rechercher le terrain correspondant au QR code ou au short code
+        processed_code = qr_code
+        if '/c/' in qr_code:
+            processed_code = qr_code.split('/c/')[-1].split('?')[0].split('#')[0]
+            
+        from sqlalchemy import func
+        court = Court.query.filter(
+            (Court.qr_code == processed_code) | 
+            (func.upper(Court.short_code) == processed_code.upper())
+        ).first()
         if not court:
             return jsonify({'error': 'QR code invalide ou terrain non trouvé'}), 404
         

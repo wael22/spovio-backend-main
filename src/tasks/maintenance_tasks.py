@@ -20,6 +20,8 @@ from ..models.user import (
 )
 from ..middleware.idempotence import IdempotenceMiddleware
 from .notification_tasks import send_notification
+from ..services.recovery_service import recovery_service
+from ..models.recovery import RecoveryRequestType
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +114,28 @@ def cleanup_zombie_sessions():
                         except Exception as e:
                             logger.warning(f"Impossible de terminer le processus {session.ffmpeg_pid}: {e}")
                     
+                    # 🆕 TRIGGER RECOVERY (Back Up sur SD Card)
+                    try:
+                        if session.start_time and session.court_id:
+                            # Calculer l'heure de fin attendue ou actuelle
+                            end_time = datetime.utcnow()
+                            if session.get_elapsed_minutes() < session.planned_duration:
+                                # Si coupé avant la fin, on essaie de récupérer jusqu'à maintenant
+                                # ou jusqu'à la fin prévue ? 
+                                # Pour l'instant : jusqu'à maintenant (le match s'est arrêté/coupé)
+                                pass
+                            
+                            logger.info(f"🔄 Déclenchement récupération auto pour session {session.id}")
+                            recovery_service.create_request(
+                                court_id=session.court_id,
+                                start_time=session.start_time,
+                                end_time=end_time,
+                                user_id=session.user_id,
+                                request_type=RecoveryRequestType.AUTO
+                            )
+                    except Exception as recovery_error:
+                         logger.error(f"Erreur déclenchement récupération: {recovery_error}")
+
                     # Notifier l'utilisateur
                     try:
                         send_notification.delay(
@@ -515,4 +539,86 @@ def cleanup_temp_files():
         
     except Exception as e:
         logger.error(f"Erreur lors du nettoyage des fichiers temporaires: {e}")
+        return {'error': str(e)}
+
+@celery_app.task
+def cleanup_uploaded_videos():
+    """
+    Nettoie les vidéos locales qui ont été uploadées sur BunnyCDN depuis plus de 48h
+    """
+    try:
+        import os
+        from ..models.user import Video
+        
+        logger.info("Démarrage du nettoyage des vidéos uploadées")
+        
+        # Date limite : il y a 48 heures
+        cutoff_time = datetime.utcnow() - timedelta(hours=48)
+        
+        # Trouver les vidéos candidates au nettoyage
+        videos_to_clean = Video.query.filter(
+            Video.processing_status == 'ready',
+            Video.cdn_migrated_at < cutoff_time,
+            Video.local_file_path.isnot(None),
+            Video.local_file_deleted_at.is_(None)
+        ).all()
+        
+        if not videos_to_clean:
+            logger.info("Aucune vidéo à nettoyer")
+            return {'cleaned_videos': 0, 'space_freed_mb': 0}
+            
+        logger.info(f"Trouvé {len(videos_to_clean)} vidéos à nettoyer")
+        
+        cleaned_count = 0
+        space_freed = 0
+        
+        for video in videos_to_clean:
+            try:
+                file_path = video.local_file_path
+                
+                # Vérifier si le fichier existe
+                if os.path.exists(file_path):
+                    file_size = os.path.getsize(file_path)
+                    
+                    # Supprimer le fichier physiquement
+                    os.remove(file_path)
+                    
+                    space_freed += file_size
+                    logger.info(f"🗑️ Fichier supprimé: {file_path} ({file_size / 1024 / 1024:.2f} MB)")
+                    
+                    # Mettre à jour la base de données après suppression réussie
+                    video.local_file_deleted_at = datetime.utcnow()
+                    
+                    # Mettre à jour le mode de suppression si pas déjà défini
+                    if not video.deletion_mode:
+                        video.deletion_mode = 'local_only'
+                    elif video.deletion_mode == 'cloud_only':
+                        video.deletion_mode = 'both'
+                        
+                    cleaned_count += 1
+                else:
+                    logger.warning(f"⚠️ Fichier introuvable mais présent en BDD: {file_path}")
+                    # Marquer comme supprimé quand même pour éviter de le re-traiter
+                    video.local_file_deleted_at = datetime.utcnow()
+                    cleaned_count += 1
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur lors du nettoyage de la vidéo {video.id}: {e}")
+                # Continuer avec la prochaine vidéo
+        
+        # Commit des changements
+        if cleaned_count > 0:
+            db.session.commit()
+            
+        space_freed_mb = round(space_freed / 1024 / 1024, 2)
+        logger.info(f"Nettoyage terminé: {cleaned_count} vidéos nettoyées, {space_freed_mb} MB libérés")
+        
+        return {
+            'cleaned_videos': cleaned_count,
+            'space_freed_mb': space_freed_mb
+        }
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du nettoyage des vidéos uploadées: {str(e)}")
+        # Ne pas rollback ici car on commit par lot ou pas du tout
         return {'error': str(e)}

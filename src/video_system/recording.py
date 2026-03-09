@@ -151,7 +151,8 @@ class VideoRecorder:
             ffmpeg_exec,
             "-hide_banner",
             "-loglevel", "info",
-            "-i", input_url
+            "-i", input_url,
+            "-s", f"{VideoConfig.VIDEO_WIDTH}x{VideoConfig.VIDEO_HEIGHT}"
         ]
         
         # Ajouter les overlays comme inputs supplémentaires avec -loop 1
@@ -206,6 +207,7 @@ class VideoRecorder:
             "-c:v", "libx264",
             "-preset", VideoConfig.VIDEO_PRESET,
             "-crf", str(VideoConfig.VIDEO_CRF),
+            "-r", str(VideoConfig.VIDEO_FPS),
             "-c:a", "aac",
             "-y",
             str(output_path)

@@ -229,7 +229,18 @@ def scan_qr_code():
     code = data.get('qr_code')
     if not code:
         return api_response(error='QR code requis', status=400)
-    court = Court.query.filter_by(qr_code=code).first()
+    
+    # Simple extraction if a full Spovio URL is sent
+    # If code looks like http://.../c/XYZ, extract XYZ
+    processed_code = code
+    if '/c/' in code:
+        processed_code = code.split('/c/')[-1].split('?')[0].split('#')[0]
+    
+    from sqlalchemy import func
+    court = Court.query.filter(
+        (Court.qr_code == processed_code) | 
+        (func.upper(Court.short_code) == processed_code.upper())
+    ).first()
     if not court:
         return api_response(error='QR code invalide', status=404)
     club = Club.query.get(court.club_id)
